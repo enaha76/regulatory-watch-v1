@@ -3,3 +3,10 @@ __pycache__/
 *.pyc
 .pytest_cache/
 artifacts/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Root artifacts
+/slides.*
