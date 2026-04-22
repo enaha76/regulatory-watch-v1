@@ -1,0 +1,165 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyperFirstAtBeginDocument{\AtBeginDocument}
+\HyperFirstAtBeginDocument{\ifx\hyper@anchor\@undefined
+\global\let\oldcontentsline\contentsline
+\gdef\contentsline#1#2#3#4{\oldcontentsline{#1}{#2}{#3}}
+\global\let\oldnewlabel\newlabel
+\gdef\newlabel#1#2{\newlabelxx{#1}#2}
+\gdef\newlabelxx#1#2#3#4#5#6{\oldnewlabel{#1}{{#2}{#3}}}
+\AtEndDocument{\ifx\hyper@anchor\@undefined
+\let\contentsline\oldcontentsline
+\let\newlabel\oldnewlabel
+\fi}
+\fi}
+\global\let\hyper@last\relax 
+\gdef\HyperFirstAtBeginDocument#1{#1}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\gdef \LT@i {\LT@entry 
+    {1}{119.81102pt}\LT@entry 
+    {1}{97.35826pt}\LT@entry 
+    {1}{219.39566pt}}
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction and Purpose}{4}{section.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.1}What is Regulatory Watch?}{4}{subsection.1.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.2}Business Motivation}{4}{subsection.1.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.3}Current Development Stage}{4}{subsection.1.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2}Technology Stack}{4}{section.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{Technology Stack}}{4}{table.1}\protected@file@percent }
+\newlabel{tab:techstack}{{1}{4}{Technology Stack}{table.1}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {3}System Architecture}{5}{section.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Architectural Overview}{5}{subsection.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Service Map}{6}{subsection.3.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Regulatory Watch service topology}}{6}{figure.1}\protected@file@percent }
+\newlabel{fig:architecture}{{1}{6}{Regulatory Watch service topology}{figure.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Docker Compose Services}{6}{subsection.3.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Docker Compose Services}}{7}{table.2}\protected@file@percent }
+\newlabel{tab:services}{{2}{7}{Docker Compose Services}{table.2}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.3.1}Health Checks}{7}{subsubsection.3.3.1}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {1}PostgreSQL health check}{7}{lstlisting.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.3.2}Celery Worker and Beat Co-location}{7}{subsubsection.3.3.2}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {2}Worker start command}{7}{lstlisting.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}FastAPI Application Structure}{7}{subsection.3.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces FastAPI Routers and Endpoints}}{7}{table.3}\protected@file@percent }
+\newlabel{tab:routers}{{3}{7}{FastAPI Routers and Endpoints}{table.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.5}Kafka Integration (Reserved)}{8}{subsection.3.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}Database Schema}{8}{section.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Migration History}{8}{subsection.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Tables Overview}{8}{subsection.4.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Database Tables}}{8}{table.4}\protected@file@percent }
+\newlabel{tab:tables}{{4}{8}{Database Tables}{table.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}The \texttt  {raw\_documents} Table}{8}{subsection.4.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces \texttt  {raw\_documents} Table Schema}}{9}{table.5}\protected@file@percent }
+\newlabel{tab:rawdoc}{{5}{9}{\texttt {raw\_documents} Table Schema}{table.5}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.1}Constraints and Indexes}{9}{subsubsection.4.3.1}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {3}raw\_documents DDL (from Alembic migration 002)}{9}{lstlisting.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}The \texttt  {domains} Table}{10}{subsection.4.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.5}The \texttt  {urls} Table}{10}{subsection.4.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.6}The \texttt  {fetch\_runs} and \texttt  {fetch\_attempts} Tables}{10}{subsection.4.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5}Data Ingestion Layer}{10}{section.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Design Principles}{10}{subsection.5.1}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {4}IngestorBase interface}{10}{lstlisting.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Connector 1 — WebConnector (T2.2)}{11}{subsection.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.1}Purpose}{11}{subsubsection.5.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.2}Implementation}{11}{subsubsection.5.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.3}Configuration Parameters}{11}{subsubsection.5.2.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {6}{\ignorespaces WebConnector Parameters}}{11}{table.6}\protected@file@percent }
+\newlabel{tab:webparams}{{6}{11}{WebConnector Parameters}{table.6}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.4}Scheduled Runs (Celery Beat)}{11}{subsubsection.5.2.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {7}{\ignorespaces Scheduled Web Crawl Jobs}}{11}{table.7}\protected@file@percent }
+\newlabel{tab:webschedule}{{7}{11}{Scheduled Web Crawl Jobs}{table.7}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Connector 2 — RSSConnector (T2.4)}{11}{subsection.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.3.1}Purpose}{11}{subsubsection.5.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.3.2}Implementation}{12}{subsubsection.5.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.3.3}Scheduled Runs}{12}{subsubsection.5.3.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {8}{\ignorespaces Scheduled RSS Jobs}}{12}{table.8}\protected@file@percent }
+\newlabel{tab:rssschedule}{{8}{12}{Scheduled RSS Jobs}{table.8}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Connector 3 — PDFConnector (T2.3)}{12}{subsection.5.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.4.1}Purpose}{12}{subsubsection.5.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.4.2}Implementation}{12}{subsubsection.5.4.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.4.3}Table Rendering}{12}{subsubsection.5.4.3}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {5}Table-to-text rendering (pdfplumber)}{12}{lstlisting.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.4.4}Schedule}{13}{subsubsection.5.4.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.5}Connector 4 — XMLConnector (T2.5)}{13}{subsection.5.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.5.1}Purpose}{13}{subsubsection.5.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.5.2}Supported XML Standards}{14}{subsubsection.5.5.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {9}{\ignorespaces XML Standards Supported}}{14}{table.9}\protected@file@percent }
+\newlabel{tab:xmlstds}{{9}{14}{XML Standards Supported}{table.9}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.5.3}Implementation}{14}{subsubsection.5.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.5.4}Schedule}{15}{subsubsection.5.5.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.6}Connector 5 — EmailConnector (T2.6)}{15}{subsection.5.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.6.1}Purpose}{15}{subsubsection.5.6.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.6.2}Implementation}{15}{subsubsection.5.6.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.6.3}Configuration}{15}{subsubsection.5.6.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {10}{\ignorespaces EmailConnector Environment Variables}}{15}{table.10}\protected@file@percent }
+\newlabel{tab:emailenv}{{10}{15}{EmailConnector Environment Variables}{table.10}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.6.4}Schedule}{16}{subsubsection.5.6.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.7}Connector Schedule Summary}{16}{subsection.5.7}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {11}{\ignorespaces Ingestion Schedule Summary}}{16}{table.11}\protected@file@percent }
+\newlabel{tab:schedules}{{11}{16}{Ingestion Schedule Summary}{table.11}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {6}Data Flow}{16}{section.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}End-to-End Ingestion Pipeline}{16}{subsection.6.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Data flow from source to storage}}{17}{figure.2}\protected@file@percent }
+\newlabel{fig:dataflow}{{2}{17}{Data flow from source to storage}{figure.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}Step-by-Step Description}{18}{subsection.6.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7}URL Normalisation and Spider-Trap Detection (T2.7)}{18}{section.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}Overview}{18}{subsection.7.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}URL Normalisation}{18}{subsection.7.2}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {6}Tracking parameters stripped during normalisation}{19}{lstlisting.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}Domain Boundary Enforcement}{19}{subsection.7.3}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {7}Domain boundary check examples}{19}{lstlisting.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.4}Spider-Trap Detection}{19}{subsection.7.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {12}{\ignorespaces Spider-Trap Detection Rules}}{19}{table.12}\protected@file@percent }
+\newlabel{tab:trapdetect}{{12}{19}{Spider-Trap Detection Rules}{table.12}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {8}Deduplication Mechanism}{20}{section.8}\protected@file@percent }
+\newlabel{sec:dedup}{{8}{20}{Deduplication Mechanism}{section.8}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.1}Design}{20}{subsection.8.1}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {8}SHA-256 content hash computation (shared across all connectors)}{20}{lstlisting.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.2}Three-Layer Deduplication}{20}{subsection.8.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.3}Upsert Implementation}{20}{subsection.8.3}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {9}PostgreSQL upsert in storage.py}{20}{lstlisting.9}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.4}Robustness Properties}{21}{subsection.8.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {9}S3 Artifact Storage (T2.9)}{21}{section.9}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.1}Purpose}{21}{subsection.9.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.2}Key Naming Convention}{21}{subsection.9.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.3}Example S3 URIs}{21}{subsection.9.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.4}Configuration}{21}{subsection.9.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {13}{\ignorespaces S3 Configuration Environment Variables}}{21}{table.13}\protected@file@percent }
+\newlabel{tab:s3env}{{13}{21}{S3 Configuration Environment Variables}{table.13}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {10}Monitored Regulatory Sources}{22}{section.10}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.1}Configured Sources}{22}{subsection.10.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {14}{\ignorespaces Active Regulatory Sources}}{22}{table.14}\protected@file@percent }
+\newlabel{tab:sources}{{14}{22}{Active Regulatory Sources}{table.14}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.2}Financial Conduct Authority (FCA)}{22}{subsection.10.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.3}EUR-Lex}{22}{subsection.10.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.4}Federal Register / GovInfo (US)}{22}{subsection.10.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {11}Current Data Collection Status}{22}{section.11}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {11.1}Documents Collected}{23}{subsection.11.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {15}{\ignorespaces Raw Documents by Source Type (March 2026)}}{23}{table.15}\protected@file@percent }
+\newlabel{tab:datacounts}{{15}{23}{Raw Documents by Source Type (March 2026)}{table.15}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {11.2}Analysis}{23}{subsection.11.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {12}Application Configuration}{23}{section.12}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {16}{\ignorespaces Application Environment Variables}}{24}{table.16}\protected@file@percent }
+\newlabel{tab:envvars}{{16}{24}{Application Environment Variables}{table.16}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {13}Operational Procedures}{25}{section.13}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {13.1}Starting the Stack}{25}{subsection.13.1}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {10}Start all services}{25}{lstlisting.10}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {13.2}Running Migrations}{25}{subsection.13.2}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {11}Apply Alembic migrations}{25}{lstlisting.11}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {13.3}Checking Celery Tasks}{25}{subsection.13.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {13.4}Triggering Manual Ingestion}{25}{subsection.13.4}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {12}Trigger a manual RSS poll}{25}{lstlisting.12}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {13}Trigger a manual PDF extraction}{25}{lstlisting.13}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {13.5}Heartbeat Monitoring}{25}{subsection.13.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {14}What is Working and What is Not Yet Implemented}{26}{section.14}\protected@file@percent }
+\newlabel{sec:roadmap}{{14}{26}{What is Working and What is Not Yet Implemented}{section.14}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {14.1}Implemented and Functional}{26}{subsection.14.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {14.2}Not Yet Implemented}{26}{subsection.14.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {15}Security Considerations}{27}{section.15}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {16}Project File Structure}{27}{section.16}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {14}Repository layout}{27}{lstlisting.14}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {17}Conclusion}{28}{section.17}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {A}Celery Beat Schedule Reference}{29}{appendix.A}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {15}Full Celery Beat schedule (app/celery\_app.py)}{29}{lstlisting.15}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {B}Glossary}{30}{appendix.B}\protected@file@percent }
+\gdef \@abspage@last{31}

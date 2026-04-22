@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Regulatory Watch: Revised MVP 1 Architecture</title>
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({ startOnLoad: true, theme: 'default', flowchart: { curve: 'basis' } });
+    </script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f9f9f9; display: flex; flex-direction: column; align-items: center; padding: 40px; margin: 0; }
+        h1 { color: #333; margin-bottom: 30px; font-weight: 600; text-align: center; }
+        .mermaid-container { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 100%; max-width: 1400px; overflow-x: auto; }
+        .instruction { margin-top: 20px; color: #666; font-size: 0.9em; }
+
+        /* ── Architecture node hover tooltip ── */
+        .mermaid .archhoverable { cursor: help; }
+        .mermaid .archhoverable:hover > rect,
+        .mermaid .archhoverable:hover > polygon,
+        .mermaid .archhoverable:hover > path { stroke-width: 3.5px !important; filter: drop-shadow(0 6px 14px rgba(0,0,0,0.18)); }
+
+        .node-tooltip {
+            position: fixed;
+            z-index: 9999;
+            max-width: 380px;
+            background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+            color: #f1f5f9;
+            border-radius: 10px;
+            padding: 14px 16px;
+            box-shadow: 0 18px 40px rgba(0,0,0,0.28);
+            font-size: 0.88rem;
+            line-height: 1.45;
+            opacity: 0;
+            transform: translateY(4px);
+            pointer-events: none;
+            transition: opacity 0.14s ease, transform 0.14s ease;
+        }
+        .node-tooltip.is-visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .node-tooltip .nt-title {
+            font-weight: 700;
+            font-size: 0.98rem;
+            margin-bottom: 2px;
+            color: #ffffff;
+        }
+        .node-tooltip .nt-file {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.72rem;
+            color: #94a3b8;
+            margin-bottom: 10px;
+        }
+        .node-tooltip .nt-row { margin-top: 8px; }
+        .node-tooltip .nt-tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 0.66rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        .node-tooltip .nt-tag.in  { background: #14b8a6; color: #062724; }
+        .node-tooltip .nt-tag.out { background: #7c3aed; color: #eae1ff; }
+        .node-tooltip code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.78rem;
+            background: rgba(255,255,255,0.08);
+            padding: 1px 6px;
+            border-radius: 4px;
+            color: #e2e8f0;
+        }
+        .node-tooltip .nt-example {
+            margin-top: 10px;
+            padding: 8px 10px;
+            background: rgba(255,255,255,0.05);
+            border-left: 3px solid #7c3aed;
+            border-radius: 4px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.74rem;
+            color: #cbd5e1;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Regulatory Watch: Revised MVP 1 Architecture (Client-Aligned)</h1>
+    
+    <div class="mermaid-container">
+        <div class="mermaid">
+flowchart TB
+    Sources[/"Regulatory sources<br/>websites · PDFs · RSS · XML · Email"/]
+
+    %% ===== M2 INGESTION =====
+    subgraph M2["M2 — Ingestion (BUILT)"]
+      direction TB
+      WC["WebConnector<br/>Crawl4AI + Playwright"]
+      WX["LLM Web Extractor<br/>web_extractor.py"]
+      BD["Blocker Detection<br/>blocker_detect.py"]
+      PC["PDFConnector<br/>pdfplumber"]
+      RC["RSSConnector<br/>feedparser"]
+      XC["XMLConnector<br/>lxml"]
+      EC["EmailConnector<br/>IMAP"]
+      LANG["Language detection<br/>langdetect"]
+      HASH["SHA-256 Hash<br/>duplication check"]
+      PG1[("raw_documents<br/>PostgreSQL")]
+      S3[("Artifact Storage<br/>S3 / MinIO")]
+    end
+
+    Sources --> WC & PC & RC & XC & EC
+    WC --> BD --> WX --> LANG
+    PC & RC & XC & EC --> LANG
+    LANG --> HASH --> PG1
+    HASH -.->|reprocessable| S3
+
+    %% ===== M3 CHANGE DETECTION =====
+    subgraph M3["M3 — Change Detection (BUILT)"]
+      direction TB
+      L1["L1: Hash short-circuit<br/>services/change_detection.py"]
+      L2["L2: Unified diff<br/>services/change_detection.py"]
+      SV[("source_versions<br/>immutable history")]
+      CE[("change_events<br/>diff_kind + payload")]
+    end
+
+    PG1 --> L1
+    L1 -- same hash --> SV
+    L1 -- new hash --> L2 --> CE
+    L2 --> SV
+
+    %% ===== M4 ENRICHMENT — CORRECTED WIRING =====
+    subgraph M4["M4 — Enrichment (BUILT · LLM-only)"]
+      direction TB
+      SIG["Significance LLM<br/>services/significance.py<br/><em>one call produces:</em><br/>score · change_type · topic ·<br/>entities · origin_countries ·<br/>trade_flow_direction · summary_en"]
+      GEO["Geo Resolver<br/>services/geo.py<br/>destination_countries from URL"]
+      EI["Entity Index<br/>services/entity_index.py<br/>normalize + upsert + HS/HTS codes"]
+      OBL["Obligations LLM<br/>services/obligations.py<br/>actor · action · condition ·<br/>deadline · penalty<br/><em>gated on score ≥ 0.6</em>"]
+      ANALYSIS[("Enriched change_event<br/>+ entities + obligations")]
+    end
+
+    CE --> SIG
+    SIG --> GEO
+    SIG --> EI
+    SIG -- score ≥ 0.6 --> OBL
+    GEO & EI & OBL --> ANALYSIS
+
+    %% ===== OBSERVABILITY & RESILIENCE (cross-cutting) =====
+    subgraph OBS["Observability &amp; Resilience (BUILT · cross-cutting)"]
+      direction TB
+      LEDGER["LLM Usage Ledger<br/>services/llm_usage.py<br/>tokens + USD per call"]
+      CB["Circuit Breaker<br/>services/circuit_breaker.py<br/>Redis-backed"]
+      LOGS["Structured logs<br/>structlog JSON"]
+    end
+    SIG -. records .-> LEDGER
+    OBL -. records .-> LEDGER
+    WX  -. records .-> LEDGER
+    SIG -. guarded by .-> CB
+    OBL -. guarded by .-> CB
+
+    %% ===== M5 PERSONALIZATION (PLANNED) =====
+    subgraph M5["M5 — Personalization &amp; Alerts (PLANNED)"]
+      direction TB
+      UPREF[("User Preference DB")]
+      MATCH["Alert Matching Engine"]
+      ALERTS[("Personalized Alert Matches")]
+      DISP["Notification Engine<br/>email / Slack / webhook"]
+    end
+    ANALYSIS -.-> MATCH
+    UPREF -.-> MATCH -.-> ALERTS -.-> DISP
+
+    %% ===== M6 DASHBOARD (PLANNED) =====
+    subgraph M6["M6 — React Dashboard (PLANNED)"]
+      direction TB
+      FEED["Personalized Feed"]
+      DETAIL["Detail + side-by-side diff"]
+      PREFS_UI["Preferences UI"]
+    end
+    ALERTS -.-> FEED & DETAIL
+    UPREF <-.-> PREFS_UI
+
+    classDef m2 fill:#d7f2d7,stroke:#2a7a2a,stroke-width:2px,color:#0a2a0a
+    classDef m3 fill:#e5d2f0,stroke:#6b2d8f,stroke-width:2px,color:#280538
+    classDef m4 fill:#ffe4b8,stroke:#c57700,stroke-width:2px,color:#3d2300
+    classDef obs fill:#d0f0fd,stroke:#0369a1,stroke-width:2px,color:#08233a
+    classDef m5 fill:#f1f5f9,stroke:#94a3b8,stroke-width:2px,color:#475569,stroke-dasharray:5 4
+    classDef m6 fill:#f1f5f9,stroke:#94a3b8,stroke-width:2px,color:#475569,stroke-dasharray:5 4
+
+    class WC,WX,BD,PC,RC,XC,EC,LANG,HASH,PG1,S3 m2
+    class L1,L2,SV,CE m3
+    class SIG,GEO,EI,OBL,ANALYSIS m4
+    class LEDGER,CB,LOGS obs
+    class UPREF,MATCH,ALERTS,DISP m5
+    class FEED,DETAIL,PREFS_UI m6
+        </div>
+    </div>
+    
+    <div class="instruction">
+        <strong>Tip:</strong> You can zoom in and out. To save it as an image, use your browser's print function and save to PDF, or use a screenshot tool.
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- Floating tooltip that appears when hovering architecture nodes -->
+    <!-- ============================================================ -->
+    <div id="node-tooltip" class="node-tooltip" role="tooltip" aria-hidden="true"></div>
+
+    <div class="mermaid-container" style="margin-top: 30px;">
+        <h2 style="color:#333;margin-top:0;">Current Build Status</h2>
+        <table style="width:100%;border-collapse:collapse;font-size:0.95em;">
+            <thead>
+                <tr style="border-bottom:2px solid #ddd;text-align:left;">
+                    <th style="padding:8px;">Milestone</th>
+                    <th style="padding:8px;">Status</th>
+                    <th style="padding:8px;">Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr style="border-bottom:1px solid #eee;">
+                    <td style="padding:8px;">M1 — Foundation</td>
+                    <td style="padding:8px;color:#2a7a2a;font-weight:600;">Done</td>
+                    <td style="padding:8px;">FastAPI · Postgres · Redis · Celery · Alembic · Docker Compose</td>
+                </tr>
+                <tr style="border-bottom:1px solid #eee;">
+                    <td style="padding:8px;">M2 — Multi-Source Ingestion</td>
+                    <td style="padding:8px;color:#2a7a2a;font-weight:600;">Done (95%)</td>
+                    <td style="padding:8px;">Web · PDF · RSS · XML · CJK-aware lang detection · S3 dedup · EmailConnector deferred</td>
+                </tr>
+                <tr style="border-bottom:1px solid #eee;">
+                    <td style="padding:8px;">M3 — Change Detection (3 layers)</td>
+                    <td style="padding:8px;color:#2a7a2a;font-weight:600;">Done</td>
+                    <td style="padding:8px;">
+                        L1 hash · L2 unified diff · <strong>L3 content-aware LLM scoring</strong>
+                        (score, change_type, affected_entities, deadline_changes, compliance_summary) ·
+                        scores both <em>modified</em> (diff) + <em>created</em> (full content) events ·
+                        auto-enqueue via Celery · inline + async backfill · force-rescore for prompt upgrades
+                    </td>
+                </tr>
+                <tr style="border-bottom:1px solid #eee;">
+                    <td style="padding:8px;">M4 — Enrichment (LLM-only)</td>
+                    <td style="padding:8px;color:#2a7a2a;font-weight:600;">Done</td>
+                    <td style="padding:8px;">
+                        <strong>Topic classification</strong> (11-category taxonomy, same LLM call as L3) ·
+                        <strong>Queryable entity index</strong> (entities + change_event_entities, acronym-normalized) ·
+                        <strong>Structured obligations</strong> (actor / action / condition / deadline / penalty,
+                        score ≥ 0.6 gated, 2nd LLM call) · Celery auto-enqueue · backfill + force-rescore CLIs
+                        (<code>show_entities.py</code>, <code>show_obligations.py</code>) ·
+                        Fast-track (spaCy + BART) removed — obsolete vs LLM
+                    </td>
+                </tr>
+                <tr style="border-bottom:1px solid #eee;">
+                    <td style="padding:8px;">M5 — Personalization &amp; Alerts</td>
+                    <td style="padding:8px;color:#888;">Pending</td>
+                    <td style="padding:8px;">User prefs · matching engine · notification dispatcher</td>
+                </tr>
+                <tr>
+                    <td style="padding:8px;">M6 — React Dashboard</td>
+                    <td style="padding:8px;color:#888;">Pending</td>
+                    <td style="padding:8px;">Feed · detail page with side-by-side diff · preferences UI</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="mermaid-container" style="margin-top: 30px;">
+        <h2 style="color:#333;margin-top:0;">Translation Strategy</h2>
+        <p style="color:#444;line-height:1.6;margin:0 0 16px 0;">
+            The original v1 plan called for an <strong>OPUS-MT input-translation</strong> stage
+            to convert non-English documents to English before NLP. <strong>That stage was
+            cut.</strong> It was a 2023 design constraint that no longer applies in 2026:
+            modern frontier-class small models (we use <code>gpt-4o-mini</code>) are
+            <em>natively multilingual</em> — they read Chinese, Arabic, French, Spanish,
+            Portuguese, and CJK scripts directly and emit English output in a single call.
+            Adding OPUS-MT in front of them would mean translating twice (lossy MT, then LLM
+            re-comprehension), shipping 400 MB+ of model weights, and adding a failure mode
+            without measurable quality gain.
+        </p>
+
+        <table style="width:100%;border-collapse:collapse;font-size:0.93em;margin-top:12px;">
+            <thead>
+                <tr style="border-bottom:2px solid #ddd;text-align:left;background:#f4f4f4;">
+                    <th style="padding:8px;">Lane</th>
+                    <th style="padding:8px;">Plan said</th>
+                    <th style="padding:8px;">Built as (today)</th>
+                    <th style="padding:8px;">Why</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr style="border-bottom:1px solid #eee;">
+                    <td style="padding:8px;"><strong>Input translation</strong><br/>(source → English for NLP)</td>
+                    <td style="padding:8px;">OPUS-MT (offline, free)</td>
+                    <td style="padding:8px;color:#2a7a2a;">
+                        <strong>Removed.</strong> LLM consumes source language directly.
+                    </td>
+                    <td style="padding:8px;">
+                        <code>gpt-4o-mini</code> is natively multilingual. Verified on
+                        <code>gov.cn</code> (Chinese) → English summary + entities in one shot.
+                    </td>
+                </tr>
+                <tr style="border-bottom:1px solid #eee;">
+                    <td style="padding:8px;"><strong>Canonical analysis layer</strong><br/>(score / topic / entities / obligations)</td>
+                    <td style="padding:8px;">English-only (post-OPUS-MT)</td>
+                    <td style="padding:8px;color:#2a7a2a;">
+                        Generated in <strong>English</strong> regardless of source language.
+                        <code>summary</code>, <code>compliance_summary</code>, <code>obligation.action</code>
+                        all stored in English.
+                    </td>
+                    <td style="padding:8px;">
+                        Single canonical form simplifies search, matching, and dedup.
+                        Source-language raw text is preserved on <code>raw_documents</code> /
+                        <code>source_versions</code> for audit / dashboard "view original".
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding:8px;"><strong>Output translation</strong><br/>(English → client preferred lang)</td>
+                    <td style="padding:8px;">DeepL or LLM, lazy + cached</td>
+                    <td style="padding:8px;color:#a67c00;">
+                        <strong>M5 — pending.</strong> Translation cache schema designed,
+                        not yet implemented.
+                    </td>
+                    <td style="padding:8px;">
+                        Translates only short English summaries + obligation actions, never the
+                        full document. Cache key = <code>sha256(text)+target_lang</code> so
+                        each unique alert is paid for once per language regardless of
+                        recipient count.
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p style="color:#666;font-size:0.9em;line-height:1.55;margin-top:16px;">
+            <strong>When OPUS-MT comes back:</strong> if a client requires an
+            <em>air-gapped</em> deployment (no external LLM) we'd swap in a local pipeline of
+            OPUS-MT (translation) + a local LLaMA-class model (analysis). The interface
+            (<code>app.services.significance.score_event</code>) is unchanged; only the
+            backing model changes. This is a configuration switch, not a re-architecture.
+        </p>
+    </div>
+
+    <script>
+      // ── Hover tooltips on architecture nodes ─────────────────────
+      // Mermaid renders each node with class "node" and an id like
+      // "flowchart-WC-12". We match by the middle segment.
+      const NODE_INFO = {
+        WC: {
+          title: "WebConnector",
+          file: "app/ingestion/web_connector.py",
+          inLabel: "URL + headers",
+          outLabel: "RawDocument",
+          example:
+            "IN  → https://www.cbp.gov/trade/rulings/ny-123456\n" +
+            "OUT → RawDocument(\n" +
+            "        raw_text='...', content_hash='a3f2…',\n" +
+            "        language='en', title='NY N123456')"
+        },
+        WX: {
+          title: "LLM Web Extractor",
+          file: "app/ingestion/web_extractor.py",
+          inLabel: "raw HTML + source URL",
+          outLabel: "clean markdown + ledger entry",
+          example:
+            "IN  → <html>…nav, ads, cookie banner…article…</html>\n" +
+            "OUT → '# Ruling NY N123456\\n\\nThis ruling classifies…'"
+        },
+        BD: {
+          title: "Blocker Detect",
+          file: "app/ingestion/blocker_detect.py",
+          inLabel: "response body + status",
+          outLabel: "{blocked, kind}",
+          example:
+            "IN  → (status=403, body='Attention Required | Cloudflare')\n" +
+            "OUT → {blocked: true, kind: 'cloudflare'}"
+        },
+        PC: {
+          title: "PDFConnector",
+          file: "app/ingestion/pdf_connector.py",
+          inLabel: "PDF URL or bytes",
+          outLabel: "RawDocument + pages[]",
+          example:
+            "IN  → https://www.fda.gov/media/.../guidance.pdf\n" +
+            "OUT → RawDocument(pages=[{page:1, text:'…HTS 0304.29.00…'}])"
+        },
+        RC: {
+          title: "RSSConnector",
+          file: "app/ingestion/rss_connector.py",
+          inLabel: "feed URL",
+          outLabel: "RawDocument[]",
+          example:
+            "IN  → https://www.federalregister.gov/documents.rss\n" +
+            "OUT → [RawDocument, RawDocument, …] (1 per entry)"
+        },
+        XC: {
+          title: "XMLConnector",
+          file: "app/ingestion/xml_connector.py",
+          inLabel: "XML URL + XPath",
+          outLabel: "RawDocument[]",
+          example:
+            "IN  → https://…/federal-register.xml, xpath='//RULE'\n" +
+            "OUT → [RawDocument, …]"
+        },
+        EC: {
+          title: "EmailConnector",
+          file: "app/ingestion/email_connector.py",
+          inLabel: "IMAP mailbox + folder",
+          outLabel: "RawDocument[]",
+          example:
+            "IN  → imap://user@regulator.gov/INBOX\n" +
+            "OUT → [RawDocument from each message]"
+        },
+        LANG: {
+          title: "Language Detection",
+          file: "app/ingestion/lang.py",
+          inLabel: "text string",
+          outLabel: "ISO-639-1 language code",
+          example:
+            "IN  → '本办法自2026年1月1日起施行。'\n" +
+            "OUT → 'zh'"
+        },
+        HASH: {
+          title: "SHA-256 Hash",
+          file: "app/services/change_detection.py",
+          inLabel: "cleaned text",
+          outLabel: "content_hash (hex)",
+          example:
+            "IN  → 'This ruling classifies…'\n" +
+            "OUT → 'a3f2b91c7e…9d0c'   (short-circuits duplicates)"
+        },
+        PG1: {
+          title: "raw_documents (Postgres)",
+          file: "table: raw_documents",
+          inLabel: "RawDocument",
+          outLabel: "row with id + artifact_uri",
+          example:
+            "INSERT → (source_url, content_hash, raw_text,\n" +
+            "          language, pages, artifact_uri, ingested_at)"
+        },
+        S3: {
+          title: "Artifact Storage",
+          file: "app/ingestion/artifact_store.py",
+          inLabel: "raw bytes + hash",
+          outLabel: "artifact_uri (s3://)",
+          example:
+            "IN  → bytes + hash='a3f2…'\n" +
+            "OUT → 's3://regwatch-raw/a3/f2/a3f2…pdf'"
+        },
+        L1: {
+          title: "L1 Hash short-circuit",
+          file: "app/services/change_detection.py",
+          inLabel: "new RawDocument",
+          outLabel: "same-hash → skip  |  new-hash → diff",
+          example:
+            "IN  → new doc hash='a3f2…',  last hash='a3f2…'\n" +
+            "OUT → 'unchanged' (exits early, zero LLM cost)"
+        },
+        L2: {
+          title: "L2 Unified diff",
+          file: "app/services/change_detection.py",
+          inLabel: "old text + new text",
+          outLabel: "unified_diff + char deltas",
+          example:
+            "IN  → (v1_text, v2_text)\n" +
+            "OUT → diff_kind='modified', added_chars=482,\n" +
+            "      unified_diff='@@ -1,3 +1,5 @@\\n …'"
+        },
+        SV: {
+          title: "source_versions",
+          file: "table: source_versions",
+          inLabel: "RawDocument content",
+          outLabel: "immutable version row",
+          example:
+            "row → (source_url, content_hash, raw_text, first_seen_at, …)"
+        },
+        CE: {
+          title: "change_events",
+          file: "table: change_events",
+          inLabel: "v1 → v2 transition",
+          outLabel: "event row for LLM pipeline",
+          example:
+            "row → (source_url, prev_version_id, new_version_id,\n" +
+            "       diff_kind, added_chars, unified_diff, detected_at)"
+        },
+        SIG: {
+          title: "Significance LLM",
+          file: "app/services/significance.py",
+          inLabel: "ChangeEvent (diff or full body)",
+          outLabel: "score · topic · entities · countries · summary",
+          example:
+            "IN  → ChangeEvent with diff about HTS 9401.61 tariff\n" +
+            "OUT → {\n" +
+            "  significance_score: 0.82,\n" +
+            "  change_type: 'substantive',\n" +
+            "  topic: 'customs_trade',\n" +
+            "  affected_entities: ['HTS 9401.61','CBP'],\n" +
+            "  origin_countries: ['CN'],\n" +
+            "  trade_flow_direction: 'inbound',\n" +
+            "  compliance_summary: 'You must now declare…'\n" +
+            "}"
+        },
+        GEO: {
+          title: "Geo Resolver",
+          file: "app/services/geo.py",
+          inLabel: "source URL + LLM origins[]",
+          outLabel: "destination_countries[] · cleaned origins[]",
+          example:
+            "IN  → url='https://www.cbp.gov/…', origins=['China']\n" +
+            "OUT → destination_countries=['US'], origin_countries=['CN']"
+        },
+        EI: {
+          title: "Entity Index",
+          file: "app/services/entity_index.py",
+          inLabel: "affected_entities[] + event_id",
+          outLabel: "entities + change_event_entities rows",
+          example:
+            "IN  → ['CBP','HTS 9401.61','Section 301']\n" +
+            "OUT → entities: [{name:'CBP', type:'agency'},\n" +
+            "                 {name:'9401.61', type:'code'}, …]\n" +
+            "      + join rows linking them to the event"
+        },
+        OBL: {
+          title: "Obligations LLM",
+          file: "app/services/obligations.py",
+          inLabel: "scored ChangeEvent (score ≥ 0.6)",
+          outLabel: "Obligation rows",
+          example:
+            "OUT → [{\n" +
+            "  actor: 'US importers of 9401.61 goods',\n" +
+            "  action: 'file additional HTS declaration',\n" +
+            "  deadline: '2026-07-01',\n" +
+            "  penalty: '25% duty surcharge',\n" +
+            "  type: 'reporting'\n" +
+            "}]"
+        },
+        ANALYSIS: {
+          title: "Enriched change_event",
+          file: "table: change_events + related",
+          inLabel: "all M4 outputs",
+          outLabel: "query-ready row",
+          example:
+            "row → score + change_type + topic + entities\n" +
+            "      + obligations + origin/dest countries + summary"
+        },
+        LEDGER: {
+          title: "LLM Usage Ledger",
+          file: "app/services/llm_usage.py",
+          inLabel: "scope · model · usage · latency",
+          outLabel: "JSONL + structured log line",
+          example:
+            "row → {ts, scope:'significance', model:'gpt-4o-mini',\n" +
+            "       prompt_tokens:812, completion_tokens:214,\n" +
+            "       cost_usd:0.00052, latency_ms:940}"
+        },
+        CB: {
+          title: "Circuit Breaker",
+          file: "app/services/circuit_breaker.py",
+          inLabel: "scope key · error signal",
+          outLabel: "allow() / open state (Redis)",
+          example:
+            "errors > threshold → Redis key 'cb:significance'=OPEN\n" +
+            "all workers see it → allow() = false → skip LLM"
+        },
+        LOGS: {
+          title: "Structured logs",
+          file: "app/logging_setup.py",
+          inLabel: "event dicts",
+          outLabel: "JSON log lines",
+          example:
+            "{\"event\":\"scored\",\"event_id\":\"…\",\n" +
+            " \"score\":0.82, \"topic\":\"customs_trade\",\n" +
+            " \"latency_ms\":940}"
+        },
+        UPREF:  { title: "User Preference DB", file: "planned",
+                  inLabel: "user profile", outLabel: "saved queries / preferences",
+                  example: "(planned) row → (user_id, topics[], keywords[],\n         countries[], preferred_lang)" },
+        MATCH:  { title: "Alert Matching Engine", file: "planned",
+                  inLabel: "ChangeEvent + UserPreferences",
+                  outLabel: "AlertMatch rows",
+                  example: "(planned) match (event.topic ∈ prefs.topics\n          AND event.countries ∩ prefs.countries)" },
+        ALERTS: { title: "Personalized Alert Matches", file: "planned",
+                  inLabel: "matched event × user",
+                  outLabel: "AlertMatch rows",
+                  example: "(planned) row → (user_id, event_id, score, status)" },
+        DISP:   { title: "Notification Engine", file: "planned",
+                  inLabel: "AlertMatch",
+                  outLabel: "email / Slack / webhook delivery",
+                  example: "(planned) POST /hook, send email, Slack message" },
+        FEED:    { title: "Feed Page", file: "planned (React)",
+                  inLabel: "AlertMatch[]", outLabel: "UI feed",
+                  example: "(planned) list of events filtered for current user" },
+        DETAIL:  { title: "Detail + side-by-side diff", file: "planned (React)",
+                  inLabel: "event_id", outLabel: "UI detail view",
+                  example: "(planned) show summary, obligations, diff, source" },
+        PREFS_UI:{ title: "Preferences UI", file: "planned (React)",
+                  inLabel: "user", outLabel: "preferences editor",
+                  example: "(planned) edit topics, countries, delivery prefs" },
+      };
+
+      const tooltipEl = document.getElementById("node-tooltip");
+
+      function buildTipHTML(info) {
+        const exampleBlock = info.example
+          ? `<div class="nt-example">${escapeHtml(info.example)}</div>`
+          : "";
+        return `
+          <div class="nt-title">${escapeHtml(info.title)}</div>
+          <div class="nt-file">${escapeHtml(info.file)}</div>
+          <div class="nt-row"><span class="nt-tag in">IN</span>${info.inLabel}</div>
+          <div class="nt-row"><span class="nt-tag out">OUT</span>${info.outLabel}</div>
+          ${exampleBlock}
+        `;
+      }
+      function escapeHtml(s) {
+        return String(s)
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+
+      function showTip(e, info) {
+        tooltipEl.innerHTML = buildTipHTML(info);
+        tooltipEl.classList.add("is-visible");
+        tooltipEl.setAttribute("aria-hidden", "false");
+        positionTip(e);
+      }
+      function hideTip() {
+        tooltipEl.classList.remove("is-visible");
+        tooltipEl.setAttribute("aria-hidden", "true");
+      }
+      function positionTip(e) {
+        const pad = 14;
+        const w = tooltipEl.offsetWidth  || 320;
+        const h = tooltipEl.offsetHeight || 160;
+        let x = e.clientX + pad;
+        let y = e.clientY + pad;
+        if (x + w > window.innerWidth)  x = e.clientX - w - pad;
+        if (y + h > window.innerHeight) y = e.clientY - h - pad;
+        tooltipEl.style.left = Math.max(8, x) + "px";
+        tooltipEl.style.top  = Math.max(8, y) + "px";
+      }
+
+      function attachHoverHandlers() {
+        const nodes = document.querySelectorAll(".mermaid .node");
+        if (nodes.length === 0) return false;
+
+        nodes.forEach((n) => {
+          // Mermaid flowchart nodes carry ids like "flowchart-WC-12"
+          const id = n.id || "";
+          const match = Object.keys(NODE_INFO).find((key) =>
+            id.includes("-" + key + "-") || id.endsWith("-" + key)
+          );
+          if (!match) return;
+          const info = NODE_INFO[match];
+          n.classList.add("archhoverable");
+          n.addEventListener("mouseenter", (e) => showTip(e, info));
+          n.addEventListener("mousemove",  positionTip);
+          n.addEventListener("mouseleave", hideTip);
+        });
+        return true;
+      }
+
+      // Mermaid renders asynchronously; retry a few times until nodes exist.
+      let tries = 0;
+      const iv = setInterval(() => {
+        if (attachHoverHandlers() || ++tries > 30) clearInterval(iv);
+      }, 200);
+    </script>
+</body>
+</html>

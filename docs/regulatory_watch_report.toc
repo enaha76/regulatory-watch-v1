@@ -1,0 +1,89 @@
+\contentsline {section}{\numberline {1}Introduction and Purpose}{4}{section.1}%
+\contentsline {subsection}{\numberline {1.1}What is Regulatory Watch?}{4}{subsection.1.1}%
+\contentsline {subsection}{\numberline {1.2}Business Motivation}{4}{subsection.1.2}%
+\contentsline {subsection}{\numberline {1.3}Current Development Stage}{4}{subsection.1.3}%
+\contentsline {section}{\numberline {2}Technology Stack}{4}{section.2}%
+\contentsline {section}{\numberline {3}System Architecture}{5}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Architectural Overview}{5}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Service Map}{6}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Docker Compose Services}{6}{subsection.3.3}%
+\contentsline {subsubsection}{\numberline {3.3.1}Health Checks}{7}{subsubsection.3.3.1}%
+\contentsline {subsubsection}{\numberline {3.3.2}Celery Worker and Beat Co-location}{7}{subsubsection.3.3.2}%
+\contentsline {subsection}{\numberline {3.4}FastAPI Application Structure}{7}{subsection.3.4}%
+\contentsline {subsection}{\numberline {3.5}Kafka Integration (Reserved)}{8}{subsection.3.5}%
+\contentsline {section}{\numberline {4}Database Schema}{8}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Migration History}{8}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Tables Overview}{8}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}The \texttt {raw\_documents} Table}{8}{subsection.4.3}%
+\contentsline {subsubsection}{\numberline {4.3.1}Constraints and Indexes}{9}{subsubsection.4.3.1}%
+\contentsline {subsection}{\numberline {4.4}The \texttt {domains} Table}{10}{subsection.4.4}%
+\contentsline {subsection}{\numberline {4.5}The \texttt {urls} Table}{10}{subsection.4.5}%
+\contentsline {subsection}{\numberline {4.6}The \texttt {fetch\_runs} and \texttt {fetch\_attempts} Tables}{10}{subsection.4.6}%
+\contentsline {section}{\numberline {5}Data Ingestion Layer}{10}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Design Principles}{10}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Connector 1 — WebConnector (T2.2)}{11}{subsection.5.2}%
+\contentsline {subsubsection}{\numberline {5.2.1}Purpose}{11}{subsubsection.5.2.1}%
+\contentsline {subsubsection}{\numberline {5.2.2}Implementation}{11}{subsubsection.5.2.2}%
+\contentsline {subsubsection}{\numberline {5.2.3}Configuration Parameters}{11}{subsubsection.5.2.3}%
+\contentsline {subsubsection}{\numberline {5.2.4}Scheduled Runs (Celery Beat)}{11}{subsubsection.5.2.4}%
+\contentsline {subsection}{\numberline {5.3}Connector 2 — RSSConnector (T2.4)}{11}{subsection.5.3}%
+\contentsline {subsubsection}{\numberline {5.3.1}Purpose}{11}{subsubsection.5.3.1}%
+\contentsline {subsubsection}{\numberline {5.3.2}Implementation}{12}{subsubsection.5.3.2}%
+\contentsline {subsubsection}{\numberline {5.3.3}Scheduled Runs}{12}{subsubsection.5.3.3}%
+\contentsline {subsection}{\numberline {5.4}Connector 3 — PDFConnector (T2.3)}{12}{subsection.5.4}%
+\contentsline {subsubsection}{\numberline {5.4.1}Purpose}{12}{subsubsection.5.4.1}%
+\contentsline {subsubsection}{\numberline {5.4.2}Implementation}{12}{subsubsection.5.4.2}%
+\contentsline {subsubsection}{\numberline {5.4.3}Table Rendering}{12}{subsubsection.5.4.3}%
+\contentsline {subsubsection}{\numberline {5.4.4}Schedule}{13}{subsubsection.5.4.4}%
+\contentsline {subsection}{\numberline {5.5}Connector 4 — XMLConnector (T2.5)}{13}{subsection.5.5}%
+\contentsline {subsubsection}{\numberline {5.5.1}Purpose}{13}{subsubsection.5.5.1}%
+\contentsline {subsubsection}{\numberline {5.5.2}Supported XML Standards}{14}{subsubsection.5.5.2}%
+\contentsline {subsubsection}{\numberline {5.5.3}Implementation}{14}{subsubsection.5.5.3}%
+\contentsline {subsubsection}{\numberline {5.5.4}Schedule}{15}{subsubsection.5.5.4}%
+\contentsline {subsection}{\numberline {5.6}Connector 5 — EmailConnector (T2.6)}{15}{subsection.5.6}%
+\contentsline {subsubsection}{\numberline {5.6.1}Purpose}{15}{subsubsection.5.6.1}%
+\contentsline {subsubsection}{\numberline {5.6.2}Implementation}{15}{subsubsection.5.6.2}%
+\contentsline {subsubsection}{\numberline {5.6.3}Configuration}{15}{subsubsection.5.6.3}%
+\contentsline {subsubsection}{\numberline {5.6.4}Schedule}{16}{subsubsection.5.6.4}%
+\contentsline {subsection}{\numberline {5.7}Connector Schedule Summary}{16}{subsection.5.7}%
+\contentsline {section}{\numberline {6}Data Flow}{16}{section.6}%
+\contentsline {subsection}{\numberline {6.1}End-to-End Ingestion Pipeline}{16}{subsection.6.1}%
+\contentsline {subsection}{\numberline {6.2}Step-by-Step Description}{18}{subsection.6.2}%
+\contentsline {section}{\numberline {7}URL Normalisation and Spider-Trap Detection (T2.7)}{18}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Overview}{18}{subsection.7.1}%
+\contentsline {subsection}{\numberline {7.2}URL Normalisation}{18}{subsection.7.2}%
+\contentsline {subsection}{\numberline {7.3}Domain Boundary Enforcement}{19}{subsection.7.3}%
+\contentsline {subsection}{\numberline {7.4}Spider-Trap Detection}{19}{subsection.7.4}%
+\contentsline {section}{\numberline {8}Deduplication Mechanism}{20}{section.8}%
+\contentsline {subsection}{\numberline {8.1}Design}{20}{subsection.8.1}%
+\contentsline {subsection}{\numberline {8.2}Three-Layer Deduplication}{20}{subsection.8.2}%
+\contentsline {subsection}{\numberline {8.3}Upsert Implementation}{20}{subsection.8.3}%
+\contentsline {subsection}{\numberline {8.4}Robustness Properties}{21}{subsection.8.4}%
+\contentsline {section}{\numberline {9}S3 Artifact Storage (T2.9)}{21}{section.9}%
+\contentsline {subsection}{\numberline {9.1}Purpose}{21}{subsection.9.1}%
+\contentsline {subsection}{\numberline {9.2}Key Naming Convention}{21}{subsection.9.2}%
+\contentsline {subsection}{\numberline {9.3}Example S3 URIs}{21}{subsection.9.3}%
+\contentsline {subsection}{\numberline {9.4}Configuration}{21}{subsection.9.4}%
+\contentsline {section}{\numberline {10}Monitored Regulatory Sources}{22}{section.10}%
+\contentsline {subsection}{\numberline {10.1}Configured Sources}{22}{subsection.10.1}%
+\contentsline {subsection}{\numberline {10.2}Financial Conduct Authority (FCA)}{22}{subsection.10.2}%
+\contentsline {subsection}{\numberline {10.3}EUR-Lex}{22}{subsection.10.3}%
+\contentsline {subsection}{\numberline {10.4}Federal Register / GovInfo (US)}{22}{subsection.10.4}%
+\contentsline {section}{\numberline {11}Current Data Collection Status}{22}{section.11}%
+\contentsline {subsection}{\numberline {11.1}Documents Collected}{23}{subsection.11.1}%
+\contentsline {subsection}{\numberline {11.2}Analysis}{23}{subsection.11.2}%
+\contentsline {section}{\numberline {12}Application Configuration}{23}{section.12}%
+\contentsline {section}{\numberline {13}Operational Procedures}{25}{section.13}%
+\contentsline {subsection}{\numberline {13.1}Starting the Stack}{25}{subsection.13.1}%
+\contentsline {subsection}{\numberline {13.2}Running Migrations}{25}{subsection.13.2}%
+\contentsline {subsection}{\numberline {13.3}Checking Celery Tasks}{25}{subsection.13.3}%
+\contentsline {subsection}{\numberline {13.4}Triggering Manual Ingestion}{25}{subsection.13.4}%
+\contentsline {subsection}{\numberline {13.5}Heartbeat Monitoring}{25}{subsection.13.5}%
+\contentsline {section}{\numberline {14}What is Working and What is Not Yet Implemented}{26}{section.14}%
+\contentsline {subsection}{\numberline {14.1}Implemented and Functional}{26}{subsection.14.1}%
+\contentsline {subsection}{\numberline {14.2}Not Yet Implemented}{26}{subsection.14.2}%
+\contentsline {section}{\numberline {15}Security Considerations}{27}{section.15}%
+\contentsline {section}{\numberline {16}Project File Structure}{27}{section.16}%
+\contentsline {section}{\numberline {17}Conclusion}{28}{section.17}%
+\contentsline {section}{\numberline {A}Celery Beat Schedule Reference}{29}{appendix.A}%
+\contentsline {section}{\numberline {B}Glossary}{30}{appendix.B}%

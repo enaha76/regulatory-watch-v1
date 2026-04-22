@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Regulatory Watch — Revised Architecture &amp; Milestones (v2)</title>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    flowchart: { curve: 'basis', htmlLabels: true, useMaxWidth: true }
+  });
+  window.addEventListener('load', () => {
+    setTimeout(() => { document.body.classList.add('ready'); }, 1500);
+  });
+</script>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  :root {
+    --ink: #1a1a1a;
+    --muted: #555;
+    --rule: #d9d9d9;
+    --accent: #1f4e8a;
+    --green: #2a7a2a; --green-bg: #d7f2d7;
+    --purple: #6b2d8f; --purple-bg: #e5d2f0;
+    --orange: #c57700; --orange-bg: #ffe4b8;
+    --red: #b32020; --red-bg: #ffd4d4;
+    --yellow: #a67c00; --yellow-bg: #fff4c2;
+    --blue: #1f4e8a; --blue-bg: #d0e5ff;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    font-size: 10.5pt;
+    line-height: 1.45;
+    margin: 0;
+    padding: 0;
+    background: #fff;
+  }
+  .page { max-width: 195mm; margin: 0 auto; padding: 8mm 0; }
+  h1, h2, h3, h4 { color: var(--ink); margin-top: 0; }
+  h1 { font-size: 22pt; font-weight: 700; margin-bottom: 4mm; letter-spacing: -0.01em; }
+  h2 { font-size: 15pt; font-weight: 700; margin-top: 8mm; margin-bottom: 3mm;
+       border-bottom: 1.5pt solid var(--accent); padding-bottom: 2mm; }
+  h3 { font-size: 12pt; font-weight: 700; margin-top: 5mm; margin-bottom: 2mm; }
+  h4 { font-size: 10.5pt; font-weight: 700; margin-top: 3mm; margin-bottom: 1.5mm; }
+  p, li { margin: 0 0 2.5mm 0; }
+  ul, ol { margin: 0 0 3mm 6mm; padding: 0; }
+  code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 9pt;
+         background: #f2f2f2; padding: 0.5pt 2pt; border-radius: 2pt; }
+  .cover {
+    page-break-after: always;
+    min-height: 245mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 20mm;
+  }
+  .cover .badge {
+    display: inline-block;
+    background: var(--accent);
+    color: white;
+    padding: 2mm 5mm;
+    border-radius: 3mm;
+    font-weight: 600;
+    font-size: 9pt;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-bottom: 10mm;
+  }
+  .cover h1 { font-size: 32pt; line-height: 1.15; max-width: 160mm; }
+  .cover .subtitle { font-size: 14pt; color: var(--muted); margin-top: 4mm; max-width: 150mm; }
+  .cover .meta {
+    margin-top: auto;
+    font-size: 10pt;
+    color: var(--muted);
+    border-top: 1pt solid var(--rule);
+    padding-top: 4mm;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+  }
+  .section { page-break-before: always; padding-top: 4mm; }
+  .section:first-of-type { page-break-before: auto; }
+
+  table { border-collapse: collapse; width: 100%; margin: 3mm 0 4mm 0; font-size: 9.5pt; }
+  th, td { text-align: left; padding: 2mm 3mm; vertical-align: top; border-bottom: 0.5pt solid var(--rule); }
+  th { background: #f7f7f7; font-weight: 600; border-bottom: 1pt solid var(--accent); }
+  tr:last-child td { border-bottom: none; }
+
+  .kpi-row { display: flex; gap: 4mm; margin: 4mm 0 6mm 0; flex-wrap: wrap; }
+  .kpi { flex: 1 1 0; min-width: 35mm; padding: 3mm 4mm; border-radius: 3mm; border: 1pt solid var(--rule); background: #fafafa; }
+  .kpi .label { font-size: 8.5pt; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .kpi .value { font-size: 14pt; font-weight: 700; margin-top: 1mm; }
+  .kpi .sub { font-size: 8.5pt; color: var(--muted); margin-top: 1mm; }
+
+  .status-done   { color: var(--green);  background: var(--green-bg);  padding: 0.5mm 2mm; border-radius: 2mm; font-size: 8.5pt; font-weight: 600; }
+  .status-wip    { color: var(--yellow); background: var(--yellow-bg); padding: 0.5mm 2mm; border-radius: 2mm; font-size: 8.5pt; font-weight: 600; }
+  .status-todo   { color: var(--red);    background: var(--red-bg);    padding: 0.5mm 2mm; border-radius: 2mm; font-size: 8.5pt; font-weight: 600; }
+
+  .milestone-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 2mm; padding-bottom: 1.5mm;
+  }
+  .milestone-header .title { font-size: 13pt; font-weight: 700; }
+  .milestone-header .meta  { font-size: 9pt; color: var(--muted); }
+
+  .progress-bar {
+    height: 4mm; background: #eee; border-radius: 2mm; overflow: hidden;
+    margin: 1.5mm 0 3mm 0;
+  }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), #4a7bb5); }
+
+  .tasks-table td:first-child { width: 22mm; font-family: "SF Mono", monospace; font-size: 8.5pt; font-weight: 600; color: var(--accent); }
+  .tasks-table td:last-child  { width: 28mm; text-align: right; }
+
+  .test-box {
+    background: #f7f9fc; border-left: 3pt solid var(--accent); padding: 2.5mm 4mm;
+    margin: 2mm 0; border-radius: 0 2mm 2mm 0;
+  }
+  .test-box .test-name { font-weight: 700; font-size: 10pt; color: var(--accent); }
+  .test-box .test-body { font-size: 9.5pt; margin-top: 1mm; }
+
+  .legend-row { display: flex; gap: 3mm; margin: 3mm 0; flex-wrap: wrap; align-items: center; font-size: 9pt; color: var(--muted); }
+  .legend-chip { display: inline-flex; align-items: center; gap: 1.5mm; }
+  .legend-dot { width: 3.5mm; height: 3.5mm; border-radius: 50%; border: 1pt solid var(--ink); }
+
+  .callout {
+    background: #fffaf0; border: 1pt solid #e7c58a; border-left: 4pt solid #c57700;
+    padding: 3mm 5mm; margin: 4mm 0; border-radius: 2mm;
+  }
+  .callout.blue  { background: #f0f7ff; border-color: #a8c7e7; border-left-color: var(--accent); }
+  .callout.green { background: #f2fbf2; border-color: #a8d7a8; border-left-color: var(--green); }
+  .callout h4 { margin-top: 0; }
+
+  .mermaid-wrap {
+    background: white; border: 1pt solid var(--rule); border-radius: 2mm;
+    padding: 4mm; margin: 3mm 0; text-align: center;
+    page-break-inside: avoid;
+  }
+  .mermaid { font-size: 10pt; }
+
+  .toc { list-style: none; margin: 0; padding: 0; }
+  .toc li { padding: 1.5mm 0; border-bottom: 0.5pt dotted var(--rule); display: flex; justify-content: space-between; }
+  .toc li span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; }
+</style>
+</head>
+<body>
+
+<!-- ============================================================ -->
+<!-- COVER -->
+<!-- ============================================================ -->
+<div class="page cover">
+  <span class="badge">Technical Specification · v2</span>
+  <h1>Regulatory Watch</h1>
+  <p class="subtitle">Revised MVP Architecture &amp; Milestone Plan — Client-Aligned</p>
+  <p class="subtitle" style="font-size: 11pt; margin-top: 14mm;">
+    An AI-powered platform for autonomous monitoring, analysis, and dissemination of
+    international regulatory changes.
+  </p>
+  <div class="meta">
+    <div>Domain: Agentic AI · NLP · RegTech</div>
+    <div>Version 2.0 · Revised from v1.0 (March 2026)</div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- TABLE OF CONTENTS -->
+<!-- ============================================================ -->
+<div class="page section">
+  <h2>Contents</h2>
+  <ul class="toc">
+    <li><span>1. Executive Summary &amp; What Changed from v1</span><span>3</span></li>
+    <li><span>2. Full System Architecture</span><span>4</span></li>
+    <li><span>3. Translation Layer — Zoom-In</span><span>5</span></li>
+    <li><span>4. Current Build Status</span><span>6</span></li>
+    <li><span>5. Milestone 1 — Infrastructure &amp; API Skeleton</span><span>7</span></li>
+    <li><span>6. Milestone 2 — Multi-Source Ingestion</span><span>8</span></li>
+    <li><span>7. Milestone 3 — Change Detection Engine</span><span>9</span></li>
+    <li><span>8. Milestone 4 — NLP &amp; LLM Intelligence</span><span>10</span></li>
+    <li><span>9. Milestone 5 — Translation &amp; Personalization</span><span>11</span></li>
+    <li><span>10. Milestone 6 — Dashboard &amp; Deployment</span><span>12</span></li>
+    <li><span>11. Technology Stack Summary</span><span>13</span></li>
+    <li><span>12. Definition of Done</span><span>13</span></li>
+  </ul>
+</div>
+
+<!-- ============================================================ -->
+<!-- 1. EXECUTIVE SUMMARY -->
+<!-- ============================================================ -->
+<div class="page section">
+  <h2>1. Executive Summary</h2>
+
+  <p>Regulatory Watch is organized as six sequential milestones over 22 weeks. This revised
+  architecture (<strong>v2</strong>) preserves the spirit of the original plan while correcting
+  three specific mistakes that would have caused significant over-engineering or cost
+  blow-up at scale.</p>
+
+  <h3>What changed from v1</h3>
+  <table>
+    <thead>
+      <tr><th style="width:6mm">#</th><th>v1 position</th><th>v2 revision</th><th>Rationale</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td>Kafka + Zookeeper in infrastructure</td>
+        <td>Redis broker only</td>
+        <td>JVM + partition overhead adds nothing at MVP scale. Defer until a true multi-consumer event bus is actually needed.</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td>RAG semantic search + vector embeddings included in M4</td>
+        <td>Removed from MVP</td>
+        <td>RAG is a different product. Not required to detect or alert on regulatory change. Unblocks 1 week of M4 scope.</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td>Single translation layer: <em>translate all non-English docs → then NLP</em></td>
+        <td>Split into <strong>input-side</strong> (OPUS-MT, Fast Track only) and <strong>output-side</strong> (DeepL/LLM, on summaries only, lazy &amp; cached)</td>
+        <td>LLMs read multilingual input natively — translating raw text before Deep Track is waste. Translating summaries only is ~150× cheaper than translating full documents.</td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td>Layer 3 (LLM Significance Score) shown but not specified</td>
+        <td>Made explicit as keystone of M3</td>
+        <td>Gates alert volume. Without it, every whitespace change fires a ChangeEvent.</td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td>M4 is 6 weeks (Fast Track + Deep Track + RAG + embeddings)</td>
+        <td>M4 is 4 weeks (Fast Track + Deep Track only)</td>
+        <td>With RAG removed, scope fits comfortably in 4 weeks.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout green">
+    <h4>Cost impact of revisions</h4>
+    <p style="margin:0">Estimated DeepL translation cost at 200 docs/day, 30% non-English:
+    <strong>v1 ≈ $1,500/month</strong> (per-character translation of high-significance raw
+    documents). <strong>v2 ≈ $10/month</strong> (translation of short summaries only, cached
+    per (event, lang) pair). <em>Savings: ~150×.</em></p>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 2. FULL ARCHITECTURE DIAGRAM -->
+<!-- ============================================================ -->
+<div class="page section">
+  <h2>2. Full System Architecture</h2>
+
+  <div class="legend-row">
+    <span class="legend-chip"><span class="legend-dot" style="background:var(--green-bg);border-color:var(--green)"></span>M2 Ingestion</span>
+    <span class="legend-chip"><span class="legend-dot" style="background:var(--purple-bg);border-color:var(--purple)"></span>M3 Change Detection</span>
+    <span class="legend-chip"><span class="legend-dot" style="background:var(--orange-bg);border-color:var(--orange)"></span>M4 NLP / LLM</span>
+    <span class="legend-chip"><span class="legend-dot" style="background:var(--red-bg);border-color:var(--red)"></span>M5 Personalization</span>
+    <span class="legend-chip"><span class="legend-dot" style="background:var(--yellow-bg);border-color:var(--yellow)"></span>M6 Dashboard</span>
+    <span class="legend-chip"><span class="legend-dot" style="background:var(--blue-bg);border-color:var(--blue)"></span>Translation (split)</span>
+  </div>
+
+  <div class="mermaid-wrap">
+    <div class="mermaid">
+flowchart TB
+  Sources[/"Regulatory sources: websites · PDFs · RSS · XML · email"/]
+  subgraph M2["M2 — Ingestion"]
+    WC["WebConnector<br/>Crawl4AI + Playwright"]
+    PC["PDFConnector<br/>Docling ▸ pdfplumber"]
+    RC["RSSConnector<br/>feedparser"]
+    XC["XMLConnector<br/>lxml + USLM/Akoma"]
+    EC["EmailConnector<br/>imaplib + MIME"]
+    LANG["Language detect<br/>langdetect / fasttext"]
+    HASH["SHA-256 hash"]
+    PG1[("raw_documents<br/>PostgreSQL")]
+    S3[("Artifact store<br/>S3 / MinIO")]
+  end
+  Sources --> WC & PC & RC & XC & EC
+  WC & PC & RC & XC & EC --> LANG --> HASH
+  HASH --> PG1
+  HASH -.-> S3
+  subgraph M3["M3 — Change Detection · 3 layers"]
+    L1["L1 Hash check<br/>short-circuits 90%+"]
+    L2["L2 Semantic diff<br/>diff-match-patch + redlines"]
+    L3["L3 Significance Score<br/>LLM 0.0–1.0 + change_type"]
+    SV[("source_versions<br/>immutable history")]
+    CE[("change_events<br/>diff + score")]
+  end
+  PG1 --> L1
+  L1 -- same hash --> SV
+  L1 -- new hash --> L2 --> L3 --> CE
+  L2 --> SV
+  subgraph TIN["Input translation · Fast Track ONLY"]
+    OMT["OPUS-MT<br/>offline · free"]
+  end
+  subgraph M4["M4 — NLP &amp; LLM Intelligence"]
+    subgraph FAST["Fast Track · every document"]
+      NER["spaCy EntityRuler<br/>REG_ID · HS_CODE · deadlines"]
+      CLS["BART-large-mnli<br/>zero-shot class."]
+    end
+    subgraph DEEP["Deep Track · significance ≥ 0.7"]
+      SUM["LLM summarization<br/>reads ANY lang → English"]
+      OBL["Obligation extraction"]
+      KW["Keyword extraction"]
+    end
+    ANALYSIS[("document_analysis<br/>summary_en · entities · category<br/>obligations · keywords")]
+  end
+  CE --> TIN --> FAST
+  CE -->|original language| DEEP
+  FAST & DEEP --> ANALYSIS
+  subgraph M5["M5 — Personalization &amp; Alerts"]
+    UPREF[("users + preferences<br/>industries · regions · keywords<br/>preferred_lang")]
+    MATCH["Matching engine<br/>keyword + semantic"]
+    ALERTS[("alerts<br/>per user × event")]
+  end
+  ANALYSIS --> MATCH
+  UPREF --> MATCH --> ALERTS
+  subgraph TOUT["Output translation · lazy · cached"]
+    TR["DeepL or LLM<br/>translates summary only<br/>per client.preferred_lang"]
+    TCACHE[("cache<br/>(event_id, lang)")]
+  end
+  ALERTS -- lang = en --> DISP
+  ALERTS -- lang ≠ en --> TR
+  TR <--> TCACHE
+  TR --> DISP
+  DISP["Dispatch<br/>email · Slack · webhook"]
+  subgraph M6["M6 — Dashboard (Streamlit ▸ React)"]
+    FEED["Feed page"]
+    DETAIL["Detail + diff view"]
+    PREFS_UI["Preferences UI"]
+    ALERTS_UI["Alerts page"]
+    FB["/feedback API"]
+  end
+  ALERTS --> FEED & ALERTS_UI
+  CE --> DETAIL
+  UPREF <--> PREFS_UI
+  FB --> UPREF
+
+  classDef m2 fill:#d7f2d7,stroke:#2a7a2a,stroke-width:2px,color:#0a2a0a
+  classDef m3 fill:#e5d2f0,stroke:#6b2d8f,stroke-width:2px,color:#280538
+  classDef m4 fill:#ffe4b8,stroke:#c57700,stroke-width:2px,color:#3d2300
+  classDef m5 fill:#ffd4d4,stroke:#b32020,stroke-width:2px,color:#450808
+  classDef m6 fill:#fff4c2,stroke:#a67c00,stroke-width:2px,color:#3d2e00
+  classDef trans fill:#d0e5ff,stroke:#1f4e8a,stroke-width:2px,color:#08234a
+  class WC,PC,RC,XC,EC,LANG,HASH,PG1,S3 m2
+  class L1,L2,L3,SV,CE m3
+  class NER,CLS,SUM,OBL,KW,ANALYSIS m4
+  class UPREF,MATCH,ALERTS,DISP m5
+  class FEED,DETAIL,PREFS_UI,ALERTS_UI,FB m6
+  class OMT,TR,TCACHE trans
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 3. TRANSLATION ZOOM -->
+<!-- ============================================================ -->
+<div class="page section">
+  <h2>3. Translation Layer — Zoom-In</h2>
+
+  <p>Translation is <strong>not a single layer</strong>. It is two different jobs, using two
+  different tools, at two different points in the pipeline. Understanding this split is the
+  most important architectural decision versus v1.</p>
+
+  <div class="mermaid-wrap">
+    <div class="mermaid">
+flowchart LR
+  RAW["Raw document<br/>any language<br/>(zh / fr / de / en / …)"]
+  RAW -->|lang ≠ en| OPUS["OPUS-MT<br/>local · free"]
+  RAW -->|lang = en| FAST["FAST TRACK<br/>spaCy + BART<br/>(English-only)"]
+  OPUS -->|English text| FAST
+  RAW -->|ORIGINAL language| DEEP["DEEP TRACK<br/>LLM (GPT-4o / Claude)<br/>natively multilingual"]
+  FAST --> ENT["entities<br/>category"]
+  DEEP --> SUM["summary_en<br/>obligations"]
+  ENT & SUM --> MERGE["document_analysis (English)"]
+  MERGE --> ALERT["matched alert"]
+  ALERT -->|client lang = en| SEND["deliver"]
+  ALERT -->|client lang ≠ en| LLM_OR_DEEPL["DeepL or LLM<br/>translate summary only<br/>~300 chars"]
+  LLM_OR_DEEPL <--> CACHE[("translation cache<br/>per event × lang")]
+  LLM_OR_DEEPL --> SEND
+  classDef need fill:#d0e5ff,stroke:#1f4e8a,stroke-width:2px,color:#08234a
+  class OPUS,LLM_OR_DEEPL,CACHE need
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>Translation job</th><th>Where</th><th>Tool</th><th>Rationale</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Input-side</strong><br/>raw doc → English (for Fast Track)</td>
+        <td>Right before spaCy / BART</td>
+        <td>OPUS-MT<br/>(local, offline, free)</td>
+        <td>Required — spaCy EntityRuler patterns and BART-mnli are English-only and cannot be replaced by multilingual variants without quality loss.</td>
+      </tr>
+      <tr>
+        <td><strong>Output-side</strong><br/>English summary → client language</td>
+        <td>Right before alert dispatch</td>
+        <td>DeepL or LLM<br/>(cached per event × lang)</td>
+        <td>Summaries are ~300 chars — translation cost is negligible, even at high volume. Cache amortizes across clients sharing a language.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Deliberately NOT translated</h3>
+  <ul>
+    <li><strong>Raw documents before Deep Track.</strong> Modern LLMs read multilingual input natively. Translating first introduces lossy paraphrase before summarization and costs ~150× more than the alternative.</li>
+    <li><strong>Full raw text via DeepL.</strong> At $25 per million characters, a single 50-page rule translation costs $2–3. Reserved exclusively for the short output summary.</li>
+  </ul>
+</div>
+
+<!-- ============================================================ -->
+<!-- 4. BUILD STATUS -->
+<!-- ============================================================ -->
+<div class="page section">
+  <h2>4. Current Build Status</h2>
+
+  <div class="kpi-row">
+    <div class="kpi"><div class="label">M1 Infrastructure</div><div class="value" style="color:var(--green)">100%</div><div class="sub">Complete</div></div>
+    <div class="kpi"><div class="label">M2 Ingestion</div><div class="value" style="color:var(--green)">95%</div><div class="sub">Email deferred</div></div>
+    <div class="kpi"><div class="label">M3 Change Detection</div><div class="value" style="color:var(--yellow)">40%</div><div class="sub">L1 done · L2 crude · L3 missing</div></div>
+    <div class="kpi"><div class="label">M4 NLP</div><div class="value" style="color:var(--red)">0%</div><div class="sub">Not started</div></div>
+    <div class="kpi"><div class="label">M5 Personalization</div><div class="value" style="color:var(--red)">0%</div><div class="sub">Not started</div></div>
+    <div class="kpi"><div class="label">M6 Dashboard</div><div class="value" style="color:var(--red)">0%</div><div class="sub">Not started</div></div>
+  </div>
+
+  <h3>Progress overview</h3>
+
+  <table>
+    <thead>
+      <tr><th style="width:10mm">M</th><th>Milestone</th><th style="width:18mm">Status</th><th>Progress</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>M1</strong></td><td>Infrastructure &amp; API Skeleton</td>
+        <td><span class="status-done">Done</span></td>
+        <td><div class="progress-bar"><div class="progress-fill" style="width:100%"></div></div></td>
+      </tr>
+      <tr>
+        <td><strong>M2</strong></td><td>Multi-Source Ingestion</td>
+        <td><span class="status-done">Done (Email deferred)</span></td>
+        <td><div class="progress-bar"><div class="progress-fill" style="width:95%"></div></div></td>
+      </tr>
+      <tr>
+        <td><strong>M3</strong></td><td>Change Detection Engine</td>
+        <td><span class="status-wip">In progress</span></td>
+        <td><div class="progress-bar"><div class="progress-fill" style="width:40%"></div></div></td>
+      </tr>
+      <tr>
+        <td><strong>M4</strong></td><td>NLP &amp; LLM Intelligence</td>
+        <td><span class="status-todo">Planned</span></td>
+        <td><div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div></td>
+      </tr>
+      <tr>
+        <td><strong>M5</strong></td><td>Translation &amp; Personalization</td>
+        <td><span class="status-todo">Planned</span></td>
+        <td><div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div></td>
+      </tr>
+      <tr>
+        <td><strong>M6</strong></td><td>Dashboard &amp; Deployment</td>
+        <td><span class="status-todo">Planned</span></td>
+        <td><div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Immediate next-action priority</h3>
+  <ol>
+    <li><strong>M3 Layer 3 — LLM Significance Score</strong> (~2 h). Keystone of change detection. Without it, alert volume will drown signal.</li>
+    <li><strong>M4 Fast Track</strong> — spaCy EntityRuler + BART zero-shot classifier (~1 day). Deterministic, cheap, runs on every document.</li>
+    <li><strong>M4 Deep Track</strong> — LLM summary worker (~1 day). The moment alerts become human-readable.</li>
+    <li><strong>M2 gaps</strong> — Docling for tables, S3 artifact store (~1 day combined). Unlocks reprocessability.</li>
+    <li><strong>M5 Alert matching + dispatch</strong> (~2 days). Ships the product loop end-to-end.</li>
+  </ol>
+</div>
+
+<!-- ============================================================ -->
+<!-- 5. MILESTONE 1 -->
+<!-- ============================================================ -->
+<div class="page section">
+  <div class="milestone-header">
+    <div class="title">Milestone 1 — Infrastructure &amp; API Skeleton</div>
+    <div class="meta">Weeks 1–3 · 3 weeks effort · <span class="status-done">Done</span></div>
+  </div>
+  <p><strong>Goal.</strong> A running Docker Compose stack with FastAPI, PostgreSQL, Redis, and Celery. Every subsequent component plugs into this foundation.</p>
+
+  <h3>User stories</h3>
+  <ul>
+    <li><strong>US-1.1</strong> Start the entire platform with a single <code>docker compose up</code>.</li>
+    <li><strong>US-1.2</strong> Auto-generated API documentation at <code>/docs</code>.</li>
+    <li><strong>US-1.3</strong> Register a new regulatory domain via the REST API.</li>
+    <li><strong>US-1.4</strong> View background-task status in a monitoring dashboard.</li>
+  </ul>
+
+  <h3>Tasks</h3>
+  <table class="tasks-table">
+    <tbody>
+      <tr><td>T1.1</td><td>Docker Compose with api · db (Postgres 16) · redis (Redis 7) · worker (Celery) · flower.</td><td><span class="status-done">Done</span></td></tr>
+      <tr><td>T1.2</td><td>FastAPI app skeleton with lifespan handlers, CORS, structured JSON logging.</td><td><span class="status-done">Done</span></td></tr>
+      <tr><td>T1.3</td><td>SQLModel models: Domain, Url, FetchRun, FetchAttempt, RawDocument.</td><td><span class="status-done">Done</span></td></tr>
+      <tr><td>T1.4</td><td>Alembic migrations for reproducible schema evolution.</td><td><span class="status-done">Done</span></td></tr>
+      <tr><td>T1.5</td><td>CRUD REST endpoints for Domain.</td><td><span class="status-done">Done</span></td></tr>
+      <tr><td>T1.6</td><td>Celery + Redis broker, heartbeat task every 60 s.</td><td><span class="status-done">Done</span></td></tr>
+      <tr><td>T1.7</td><td>Flower on port 5555 for Celery monitoring.</td><td><span class="status-done">Done</span></td></tr>
+      <tr><td>T1.8</td><td>Makefile targets: up · down · migrate · logs · test.</td><td><span class="status-done">Done</span></td></tr>
+      <tr><td>T1.9</td><td>Health endpoints: /health · /health/db · /health/redis.</td><td><span class="status-done">Done</span></td></tr>
+      <tr><td>T1.10</td><td>README with setup and environment documentation.</td><td><span class="status-done">Done</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Test scenarios</h3>
+  <div class="test-box"><span class="test-name">TEST-1.1 · Full Stack Startup</span>
+    <div class="test-body">Run <code>docker compose up</code>. Wait 30 seconds. All 4 services (api · db · redis · worker) remain healthy for 10 consecutive minutes.</div></div>
+  <div class="test-box"><span class="test-name">TEST-1.2 · Domain Registration</span>
+    <div class="test-body">POST /domains returns 201 with UUID. Domain persists across container restart.</div></div>
+  <div class="test-box"><span class="test-name">TEST-1.3 · API Documentation</span>
+    <div class="test-body">Swagger UI at /docs loads. Execute POST /domains from UI with valid payload returns 201.</div></div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 6. MILESTONE 2 -->
+<!-- ============================================================ -->
+<div class="page section">
+  <div class="milestone-header">
+    <div class="title">Milestone 2 — Multi-Source Data Ingestion</div>
+    <div class="meta">Weeks 4–6 · 3 weeks effort · <span class="status-done">Done — 95% (EmailConnector deferred)</span></div>
+  </div>
+  <p><strong>Goal.</strong> A working ingestion layer that pulls regulatory content from 5 source types and stores clean, structured text in the database.</p>
+
+  <h3>User stories</h3>
+  <ul>
+    <li><strong>US-2.1</strong> Crawl regulatory websites including JavaScript-rendered portals like EUR-Lex.</li>
+    <li><strong>US-2.2</strong> PDF guidance documents extracted with tables intact.</li>
+    <li><strong>US-2.3</strong> Add RSS feeds; detect new publications within 30 minutes.</li>
+    <li><strong>US-2.4</strong> SHA-256 fingerprint on every document; no duplicates.</li>
+    <li><strong>US-2.5</strong> Respect robots.txt and apply rate limiting.</li>
+  </ul>
+
+  <h3>Tasks</h3>
+  <table class="tasks-table">
+    <tbody>
+      <tr><td>T2.1</td><td>IngestorBase abstract class with <code>async def fetch() → List[RawDocument]</code>.</td><td><span class="status-done">Done</span></td></tr>
+      <tr><td>T2.2</td><td>WebConnector · Crawl4AI async Playwright, Markdown output, LLM fallback, blocker-page detector.</td><td><span class="status-done">Done</span></td></tr>
+      <tr><td>T2.3</td><td>PDFConnector · Docling (optional, opt-in via <code>requirements-docling.txt</code>) + pdfplumber fallback with per-page offsets.</td><td><span class="status-done">Done</span></td></tr>
+      <tr><td>T2.4</td><td>RSSConnector · feedparser; Celery Beat every 30 minutes.</td><td><span class="status-done">Done</span></td></tr>
+      <tr><td>T2.5</td><td>XMLConnector · lxml + XPath for USLM &amp; Akoma Ntoso (schema-aware).</td><td><span class="status-done">Done</span></td></tr>
+      <tr><td>T2.6</td><td>EmailConnector · imaplib + MIME; PDF attachments → PDFConnector.</td><td><span class="status-todo">Deferred (post-MVP)</span></td></tr>
+      <tr><td>T2.7</td><td>URL normalization: strip tracking, resolve redirects, detect spider traps.</td><td><span class="status-done">Done</span></td></tr>
+      <tr><td>T2.8</td><td>Store RawDocument with source metadata + <code>artifact_uri</code> cold-storage pointer.</td><td><span class="status-done">Done</span></td></tr>
+      <tr><td>T2.9</td><td>S3 artifact storage wired into <code>upsert_documents</code>; fails open when <code>AWS_S3_BUCKET</code> unset.</td><td><span class="status-done">Done</span></td></tr>
+      <tr><td>T2.10</td><td>Connectors as Celery tasks (Web: 6h · RSS: 30m · XML/USLM: 24h; PDFs discovered transitively by web crawler).</td><td><span class="status-done">Done</span></td></tr>
+      <tr><td>T2.11</td><td>CJK-aware language detection (<code>app.ingestion.lang</code>) — Unicode-block pre-classifier fixes the zh-Hant → ko misclassification observed in live testing.</td><td><span class="status-done">Done</span></td></tr>
+      <tr><td>T2.12</td><td>Blocker-page detector in WebConnector — refuses CAPTCHA / Cloudflare / access-denied interstitials before they pollute <code>raw_documents</code>.</td><td><span class="status-done">Done</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Test scenarios</h3>
+  <div class="test-box"><span class="test-name">TEST-2.1 · Web Crawl (JavaScript Site)</span>
+    <div class="test-body">Configure EUR-Lex seed. At least 10 documents ingested per cycle; extracted text ≥ 500 chars, no raw HTML tags.</div></div>
+  <div class="test-box"><span class="test-name">TEST-2.2 · PDF Extraction with Tables</span>
+    <div class="test-body">FDA guidance PDF. Table cells preserved as structured rows, not merged into a single text run.</div></div>
+  <div class="test-box"><span class="test-name">TEST-2.3 · RSS Polling</span>
+    <div class="test-body">Federal Register RSS feed. ≥ 5 new items stored after one cycle with title, date, summary, link.</div></div>
+  <div class="test-box"><span class="test-name">TEST-2.4 · Duplicate Prevention</span>
+    <div class="test-body">Ingest same URL twice. Exactly one row; second ingest updates <code>last_seen_at</code>.</div></div>
+  <div class="test-box"><span class="test-name">TEST-2.5 · Domain Boundary Enforcement</span>
+    <div class="test-body">Seed <code>cbp.gov/trade/</code>. Zero URLs outside <code>cbp.gov</code> stored.</div></div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 7. MILESTONE 3 -->
+<!-- ============================================================ -->
+<div class="page section">
+  <div class="milestone-header">
+    <div class="title">Milestone 3 — Change Detection Engine</div>
+    <div class="meta">Weeks 7–8 · 2 weeks effort · <span class="status-wip">40%</span></div>
+  </div>
+  <p><strong>Goal.</strong> Detect when a regulatory document has genuinely changed, compute meaningful diffs, and store version history with LLM-powered interpretation.</p>
+
+  <h3>User stories</h3>
+  <ul>
+    <li><strong>US-3.1</strong> Notified only when regulatory content genuinely changes (no whitespace noise).</li>
+    <li><strong>US-3.2</strong> See exactly which paragraphs changed.</li>
+    <li><strong>US-3.3</strong> Plain-English explanation of what changed and required action.</li>
+    <li><strong>US-3.4</strong> Computationally efficient; monitor thousands of URLs without excessive cost.</li>
+  </ul>
+
+  <h3>Tasks</h3>
+  <table class="tasks-table">
+    <tbody>
+      <tr><td>T3.1</td><td><strong>Layer 1 · Content Hashing.</strong> SHA-256 of normalized text; skip if unchanged (eliminates 90%+ compute).</td><td><span class="status-done">Done</span></td></tr>
+      <tr><td>T3.2</td><td>source_versions table: (source_url, content_hash, raw_text, first_seen_at, last_seen_at).</td><td><span class="status-done">Done</span></td></tr>
+      <tr><td>T3.3</td><td><strong>Layer 2 · Semantic Text Diff.</strong> diff-match-patch (char/word level) + redlines for legal-aware tokenization (<code>U.S.C.</code>, <code>CFR</code>, <code>§</code>).</td><td><span class="status-wip">Partial — stdlib <code>difflib</code> only; diff-match-patch + redlines pending.</span></td></tr>
+      <tr><td>T3.4</td><td>Serialized diff as structured JSON in change_events.unified_diff.</td><td><span class="status-done">Done</span></td></tr>
+      <tr><td>T3.5</td><td>HTML diff renderer (green adds / red deletes) for dashboard.</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T3.6</td><td><strong>Layer 3 · LLM Interpretation.</strong> Structured prompt → (change_type, affected_entities, deadline_changes, compliance_summary) via Pydantic.</td><td><span class="status-todo">Planned — next priority</span></td></tr>
+      <tr><td>T3.7</td><td>significance_score field (0.0–1.0) on change_events.</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T3.8</td><td>Exponential-backoff cooldown for URLs with ≥ 3 consecutive fetch errors.</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T3.9</td><td>Celery Beat re-crawl schedule: daily (priority ≥ 0.7) / weekly (others).</td><td><span class="status-todo">Planned</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Test scenarios</h3>
+  <div class="test-box"><span class="test-name">TEST-3.1 · False Positive Prevention</span>
+    <div class="test-body">Ingest a document; re-ingest with only whitespace change. No new version. No alert.</div></div>
+  <div class="test-box"><span class="test-name">TEST-3.2 · Substantive Change Detection</span>
+    <div class="test-body">Modify a compliance deadline. Re-ingest. New version created, diff highlights the sentence, LLM classifies as substantive or critical.</div></div>
+  <div class="test-box"><span class="test-name">TEST-3.3 · LLM Interpretation Output</span>
+    <div class="test-body">All four fields present (change_type, affected_entities, deadline_changes, compliance_summary ≥ 50 words). Pydantic validation passes ≥ 95%.</div></div>
+  <div class="test-box"><span class="test-name">TEST-3.4 · Version History Integrity</span>
+    <div class="test-body">Three crawls with one content change → exactly 2 versions; version_number increments; diff_from_previous null for v1, non-null for v2.</div></div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 8. MILESTONE 4 -->
+<!-- ============================================================ -->
+<div class="page section">
+  <div class="milestone-header">
+    <div class="title">Milestone 4 — NLP &amp; LLM Intelligence</div>
+    <div class="meta">Weeks 9–12 · 4 weeks effort (revised from 6) · <span class="status-todo">0%</span></div>
+  </div>
+  <p><strong>Goal.</strong> Extract structured intelligence from raw regulatory text — named entities, categories, keywords, summaries, and obligations — using a dual pipeline.</p>
+
+  <div class="callout blue">
+    <h4>Revision from v1</h4>
+    <p style="margin:0">RAG endpoint (T4.11) and pgvector embeddings (T4.10) have been <strong>removed from MVP scope</strong>. They are a separate product, not required for change detection and alerting. This reduces M4 from 6 weeks to 4 weeks.</p>
+  </div>
+
+  <h3>User stories</h3>
+  <ul>
+    <li><strong>US-4.1</strong> Documents classified by topic (data privacy, financial, healthcare, trade, etc.).</li>
+    <li><strong>US-4.2</strong> Key entities extracted (regulation ID, effective date, regulatory body, penalties).</li>
+    <li><strong>US-4.3</strong> 3-paragraph executive summary for documents over 5 pages.</li>
+    <li><strong>US-4.4</strong> Each compliance obligation extracted as {actor, obligation, deadline, source_paragraph}.</li>
+  </ul>
+
+  <h3>Fast Track tasks (Weeks 9–10)</h3>
+  <table class="tasks-table">
+    <tbody>
+      <tr><td>T4.1</td><td>spaCy 3.8 + en_core_web_trf transformer pipeline.</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T4.2</td><td>Custom EntityRuler: REGULATION_ID, EFFECTIVE_DATE, REG_BODY, COMPLIANCE_DEADLINE, PENALTY_AMOUNT.</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T4.3</td><td>BART-large-mnli zero-shot with candidate labels (environmental / financial / healthcare / data privacy / trade / labor / energy / cybersecurity).</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T4.4</td><td>Store extracted entities as JSON in Document.entities; primary category in Document.category.</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T4.5</td><td>Trigger Fast Track as Celery task per newly ingested document.</td><td><span class="status-todo">Planned</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Deep Track tasks (Weeks 11–12, revised)</h3>
+  <table class="tasks-table">
+    <tbody>
+      <tr><td>T4.6</td><td>Map-Reduce summarization with LangChain (chunk 2,000, overlap 200) → 3-paragraph executive summary.</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T4.7</td><td>Keyword extraction via structured prompt + PydanticOutputParser (top 10 keywords).</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T4.8</td><td>Obligation extraction → {actor, obligation, deadline, source_paragraph} as JSON array.</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T4.9</td><td>Deep Track routing: >10 pages · Fast-Track confidence <0.7 · significance ≥ critical.</td><td><span class="status-todo">Planned</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Test scenarios</h3>
+  <div class="test-box"><span class="test-name">TEST-4.1 · Entity Extraction Accuracy</span>
+    <div class="test-body">20 real documents. ≥ 3 entities per doc; REGULATION_ID identified in ≥ 80% of documents that contain one.</div></div>
+  <div class="test-box"><span class="test-name">TEST-4.2 · Zero-Shot Classification</span>
+    <div class="test-body">50 docs with 10 human-labeled. Primary category matches human label ≥ 80%.</div></div>
+  <div class="test-box"><span class="test-name">TEST-4.3 · Summarization Quality</span>
+    <div class="test-body">50-page PDF → 150–300 words; no claim contradicts source; at least one compliance deadline present.</div></div>
+  <div class="test-box"><span class="test-name">TEST-4.4 · Obligation Extraction</span>
+    <div class="test-body">EU AI Act processed. ≥ 50 obligations extracted (benchmark: 729 with LLaMA 3.3 70B); non-empty actor and obligation fields.</div></div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 9. MILESTONE 5 -->
+<!-- ============================================================ -->
+<div class="page section">
+  <div class="milestone-header">
+    <div class="title">Milestone 5 — Translation &amp; Personalization</div>
+    <div class="meta">Weeks 13–16 · 4 weeks effort · <span class="status-todo">0%</span></div>
+  </div>
+  <p><strong>Goal.</strong> Multilingual support for international regulatory documents and a personalized alert engine that matches updates to individual user interest profiles.</p>
+
+  <div class="callout blue">
+    <h4>Revision from v1 — the translation split</h4>
+    <p style="margin:0">Translation is <strong>no longer a single layer that runs on all non-English raw documents</strong>. It is split into an <em>input-side</em> translator (OPUS-MT, Fast Track only) and an <em>output-side</em> translator (DeepL / LLM, on short summaries only, cached per event × language). The Deep Track LLM reads multilingual input natively and does not require translation.</p>
+  </div>
+
+  <h3>User stories</h3>
+  <ul>
+    <li><strong>US-5.1</strong> Documents from non-English regulatory bodies usable by English-only NLP components.</li>
+    <li><strong>US-5.2</strong> Pharmaceutical analyst receives only pharmaceutical-related alerts.</li>
+    <li><strong>US-5.3</strong> Configure monitoring profile by industries, jurisdictions, regulatory bodies, keywords.</li>
+    <li><strong>US-5.4</strong> Alerts match conceptually-related regulations, not just exact keywords.</li>
+    <li><strong>US-5.5</strong> Choose notification frequency (immediate / daily digest / weekly digest).</li>
+  </ul>
+
+  <h3>Translation tasks (Weeks 13–14, revised)</h3>
+  <table class="tasks-table">
+    <tbody>
+      <tr><td>T5.1</td><td>TranslationService · Input-side OPUS-MT (Helsinki-NLP, offline, 1,000+ pairs).</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T5.2</td><td>Language detection on every ingested doc; store in Document.language.</td><td><span class="status-done">Done</span></td></tr>
+      <tr><td>T5.3</td><td>If <code>language ≠ en</code>: OPUS-MT → Fast Track input. Deep Track LLM reads original.</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T5.4</td><td>Regulatory glossary (≥ 50 terms) used as OPUS-MT preprocessing hints and LLM prompt context.</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T5.5</td><td><strong>Output-side</strong>: DeepL or LLM translates <code>summary_en</code> only, per <code>client.preferred_lang</code>. Cache table: <code>change_event_translations (event_id, lang, text)</code>.</td><td><span class="status-todo">Planned</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3>User matching tasks (Weeks 15–16)</h3>
+  <table class="tasks-table">
+    <tbody>
+      <tr><td>T5.6</td><td>User model: email · preferences (industries, bodies, keywords, jurisdictions) · notification_frequency (immediate / daily / weekly) · preferred_lang.</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T5.7</td><td>Alert model: user_id · document_id · match_score · match_reason · sent_at · read_at.</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T5.8</td><td>Keyword matching: SQL predicates over document entities and category.</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T5.9</td><td>Semantic matching: embed interest description with <code>BAAI/bge-small-en-v1.5</code>; pgvector cosine similarity &gt; 0.75.</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T5.10</td><td>Notification Celery task; batch by user + frequency; send via SMTP / SendGrid.</td><td><span class="status-todo">Planned</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Test scenarios</h3>
+  <div class="test-box"><span class="test-name">TEST-5.1 · Translation Quality</span>
+    <div class="test-body">BaFin circular (de) and AMF notice (fr). Language correctly detected. Translated text is coherent English; regulatory glossary terms preserved; original text still available.</div></div>
+  <div class="test-box"><span class="test-name">TEST-5.2 · Keyword Matching Precision</span>
+    <div class="test-body">Profile with {pharmaceutical, FDA, drug approval}. 20 mixed docs → 10 pharmaceutical alerts, 0 false positives.</div></div>
+  <div class="test-box"><span class="test-name">TEST-5.3 · Semantic Matching Recall</span>
+    <div class="test-body">Profile "carbon emissions and greenhouse gas reporting". Doc about "CO2 emission thresholds" (no "greenhouse gas" keyword) → alert with match_reason=semantic, score ≥ 0.75.</div></div>
+  <div class="test-box"><span class="test-name">TEST-5.4 · Notification Frequency</span>
+    <div class="test-body">Two users (immediate / daily). Five matching docs. After 1h: immediate user has 5 emails; daily user has 0 (pending digest).</div></div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 10. MILESTONE 6 -->
+<!-- ============================================================ -->
+<div class="page section">
+  <div class="milestone-header">
+    <div class="title">Milestone 6 — Dashboard &amp; Production Deployment</div>
+    <div class="meta">Weeks 17–20 · 4 weeks effort · <span class="status-todo">0%</span></div>
+  </div>
+  <p><strong>Goal.</strong> A usable 5-view dashboard, full end-to-end integration tests, and production deployment on a VPS with CI/CD.</p>
+
+  <h3>User stories</h3>
+  <ul>
+    <li><strong>US-6.1</strong> Browse chronological feed of regulatory updates with category badges and AI summaries.</li>
+    <li><strong>US-6.2</strong> Search across all monitored documents with typo tolerance.</li>
+    <li><strong>US-6.3</strong> Side-by-side color-coded diff when clicking an updated document.</li>
+    <li><strong>US-6.4</strong> Configure monitoring preferences through a web interface.</li>
+    <li><strong>US-6.5</strong> Mark alerts as read and filter by jurisdiction or category.</li>
+  </ul>
+
+  <h3>Dashboard tasks</h3>
+  <table class="tasks-table">
+    <tbody>
+      <tr><td>T6.1</td><td>Streamlit multi-page app + Meilisearch client + FastAPI client.</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T6.2</td><td>Feed Page · chronological cards · category badges · AI summary · filters.</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T6.3</td><td>Detail Page · summary · entities · keywords · obligations · side-by-side diff.</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T6.4</td><td>Search Page · Meilisearch sub-50ms · facets · snippet highlights.</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T6.5</td><td>Preferences Page · industries, bodies, keywords, jurisdictions, frequency.</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T6.6</td><td>Alerts Page · sorted by match_score · mark-as-read · unread count.</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T6.7</td><td>Plotly charts: documents per day, category distribution.</td><td><span class="status-todo">Planned</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Integration &amp; deployment tasks</h3>
+  <table class="tasks-table">
+    <tbody>
+      <tr><td>T6.8</td><td>End-to-end integration tests (pytest) covering full pipeline.</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T6.9</td><td>GitHub Actions CI/CD · ruff · mypy · integration tests on every PR.</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T6.10</td><td>Deploy to VPS (Hetzner CX21) · Nginx reverse proxy · HTTPS via Let's Encrypt.</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T6.11</td><td>Structured JSON logging shipped to aggregator or rotating files.</td><td><span class="status-todo">Planned</span></td></tr>
+      <tr><td>T6.12</td><td>Architecture diagram + final README + deployment instructions.</td><td><span class="status-todo">Planned</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Test scenarios</h3>
+  <div class="test-box"><span class="test-name">TEST-6.1 · End-to-End Pipeline</span>
+    <div class="test-body">Published EU regulation → crawled → change-detected → NLP classified "data privacy" → summarized → translation-checked → matched 2 users → alerts appear in dashboard → users view detail page. All 9 steps within 10 minutes.</div></div>
+  <div class="test-box"><span class="test-name">TEST-6.2 · Search Relevance</span>
+    <div class="test-body">100+ indexed docs. Top-3 results genuinely relevant for {GDPR, FDA, Basel} queries. Latency &lt; 100 ms.</div></div>
+  <div class="test-box"><span class="test-name">TEST-6.3 · Diff Visualization</span>
+    <div class="test-body">Detail Page renders side-by-side diff: green additions, red deletions. LLM compliance summary below.</div></div>
+  <div class="test-box"><span class="test-name">TEST-6.4 · CI/CD Pipeline</span>
+    <div class="test-body">PR adding a connector runs lint + type-check + integration tests. Pipeline ≤ 10 minutes. Merge blocked on failure.</div></div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 11. TECH STACK -->
+<!-- ============================================================ -->
+<div class="page section">
+  <h2>11. Technology Stack Summary</h2>
+
+  <table>
+    <thead>
+      <tr><th>Layer</th><th>Technology</th><th>Justification</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Backend</td><td>FastAPI + SQLModel</td><td>Async, typed, auto-docs. SQLModel by FastAPI's author.</td></tr>
+      <tr><td>Database</td><td>PostgreSQL 16 + pgvector</td><td>Structured + vector data in one DB. Single operational surface.</td></tr>
+      <tr><td>Task Queue</td><td>Celery + Redis 7</td><td>Async crawl scheduling, notification delivery. <em>No Kafka at MVP.</em></td></tr>
+      <tr><td>Web crawling</td><td>Crawl4AI + Playwright</td><td>JS rendering; 13 KB avg clean markdown per page in CBP benchmarks.</td></tr>
+      <tr><td>PDF</td><td>Docling + pdfplumber</td><td>97.9% table accuracy (Docling); pdfplumber fallback for edge cases.</td></tr>
+      <tr><td>Change detection</td><td>diff-match-patch + redlines</td><td>Google-scale diffing plus legal-aware tokenization (<code>U.S.C.</code>, <code>CFR</code>, <code>§</code>).</td></tr>
+      <tr><td>NLP Fast Track</td><td>spaCy 3.8 + EntityRuler + BART-large-mnli</td><td>Deterministic, cheap, per-document tagging.</td></tr>
+      <tr><td>NLP Deep Track</td><td>LangChain + GPT-4o / Claude Sonnet</td><td>Multilingual-native summarization; structured obligation extraction.</td></tr>
+      <tr><td>Embeddings</td><td>BAAI/bge-small-en-v1.5</td><td>Strong retrieval, 384-dim, small footprint. Used for semantic matching only.</td></tr>
+      <tr><td>Translation (input)</td><td>OPUS-MT (Helsinki-NLP)</td><td>Offline, free, 1,000+ language pairs. Fast Track input only.</td></tr>
+      <tr><td>Translation (output)</td><td>DeepL API or LLM</td><td>Per-client summary translation; cached per event × lang; ~150× cheaper than full-doc approach.</td></tr>
+      <tr><td>Search</td><td>Meilisearch</td><td>Sub-50ms typo-tolerant faceted search.</td></tr>
+      <tr><td>Frontend</td><td>Streamlit → React</td><td>Zero-JS MVP; production flexibility later.</td></tr>
+      <tr><td>Infrastructure</td><td>Docker Compose + GitHub Actions</td><td>One-command deployment + CI/CD.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============================================================ -->
+<!-- 12. DEFINITION OF DONE -->
+<!-- ============================================================ -->
+<div class="page section">
+  <h2>12. Definition of Done</h2>
+  <p>A milestone is considered done when all of the following are met:</p>
+  <ol>
+    <li>All tasks in the milestone have a merged pull request on <code>main</code>.</li>
+    <li>All test scenarios for the milestone pass without manual workarounds.</li>
+    <li><code>docker compose up</code> produces a fully functional stack without errors.</li>
+    <li>Code coverage for new modules is ≥ 70%.</li>
+    <li>Documentation (README, docstrings, environment variables) is updated.</li>
+    <li>No high-severity security vulnerabilities in dependencies (<code>pip audit</code>).</li>
+  </ol>
+
+  <h3>Closing note</h3>
+  <p>This v2 revision preserves the disciplined, test-driven spirit of the original plan while
+  eliminating two sources of over-engineering (Kafka, RAG-in-MVP) and correcting the
+  single biggest cost risk (full-document translation). The resulting architecture is
+  simpler, cheaper at scale, and remains professionally sound for the regulatory-watch
+  problem domain.</p>
+
+  <div style="margin-top: 12mm; padding-top: 4mm; border-top: 0.5pt solid var(--rule); color: var(--muted); font-size: 9pt; text-align: center;">
+    Regulatory Watch · Revised Architecture v2.0 · Ready for Development
+  </div>
+</div>
+
+</body>
+</html>

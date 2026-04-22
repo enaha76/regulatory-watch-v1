@@ -1,0 +1,12 @@
+# Opt-in extras for layout-aware PDF extraction.
+# Installs Docling (IBM) + Torch, which gives richer table detection
+# than pdfplumber (97.9% table accuracy vs ~80%).
+#
+# Install on top of the base requirements:
+#   pip install -r requirements.txt
+#   pip install -r requirements-docling.txt
+#
+# Adds ~1 GB to the image. The PDFConnector auto-detects Docling and
+# falls back to pdfplumber when it's absent, so omitting this is safe.
+
+docling>=2.0

@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Regulatory Watch — Presentation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: "base",
+    themeVariables: {
+      background: "transparent",
+      primaryColor: "#1e293b",
+      primaryTextColor: "#f1f5f9",
+      primaryBorderColor: "#14b8a6",
+      lineColor: "#64748b",
+      secondaryColor: "#0f172a",
+      tertiaryColor: "#0f172a",
+      fontSize: "15px",
+      fontFamily: "Inter, sans-serif"
+    }
+  });
+</script>
+<style>
+  :root {
+    --bg: #050712;
+    --bg-2: #070b18;
+    --surface: rgba(15, 23, 42, 0.78);
+    --surface-2: rgba(30, 41, 59, 0.70);
+    --text: #f1f5f9;
+    --muted: #94a3b8;
+    --dim: #64748b;
+    --accent: #7c3aed;   /* primary brand */
+    --accent-2: #2dd4bf; /* secondary */
+    --accent-3: #60a5fa; /* highlight */
+    --border: rgba(148, 163, 184, 0.16);
+    --good: #4ade80;
+    --warn: #fbbf24;
+    --radius: 14px;
+    --font: "Inter", system-ui, -apple-system, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    overflow: hidden;
+    height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(1100px 700px at 78% -8%, rgba(124, 58, 237, 0.18), transparent 62%),
+      radial-gradient(1000px 700px at -10% 110%, rgba(45, 212, 191, 0.12), transparent 60%),
+      radial-gradient(900px 600px at 110% 72%, rgba(96, 165, 250, 0.10), transparent 55%),
+      linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── Slide container ───────────────────────────────────────── */
+  .deck {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1;
+  }
+  .slide {
+    position: absolute;
+    inset: 0;
+    padding: 5.5vh 8vw 8vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.45s ease, transform 0.45s ease;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  /* Prevent ultra-wide lines on big monitors. */
+  .slide > * { width: min(1200px, 100%); }
+  .slide.active {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  .slide.prev { transform: translateY(-20px); }
+
+  /* ── Typography ────────────────────────────────────────────── */
+  h1, h2, h3, h4 { margin: 0; letter-spacing: -0.03em; font-weight: 700; }
+  h1 { font-size: clamp(2.5rem, 5.5vw, 4.5rem); line-height: 1.05; font-weight: 800; }
+  h2 { font-size: clamp(1.8rem, 3.2vw, 2.6rem); line-height: 1.1; margin-bottom: 1.5rem; }
+  h3 { font-size: 1.05rem; color: var(--accent-2); text-transform: uppercase; letter-spacing: 0.18em; font-weight: 700; margin-bottom: 1rem; }
+  p  { margin: 0; line-height: 1.55; color: var(--muted); }
+  .lead { font-size: clamp(1.05rem, 1.6vw, 1.35rem); color: var(--muted); max-width: 55ch; }
+  .mono { font-family: var(--mono); font-size: 0.82em; }
+  .accent { color: var(--accent); }
+  .subtle { color: var(--dim); }
+  strong { color: var(--text); font-weight: 600; }
+
+  /* ── HUD (counter, dots, hint) ─────────────────────────────── */
+  .hud {
+    position: fixed;
+    inset: auto 0 0 0;
+    padding: 1.25rem 2vw;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.78rem;
+    color: var(--dim);
+    z-index: 50;
+    pointer-events: none;
+  }
+  .hud .left, .hud .right { display: flex; align-items: center; gap: 1rem; pointer-events: auto; }
+  .hud .brand { font-weight: 600; color: var(--muted); letter-spacing: -0.01em; }
+  .hud .brand span { color: var(--accent-2); }
+  .counter { font-family: var(--mono); }
+  .hint { color: var(--dim); font-size: 0.72rem; }
+  .hint kbd {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--muted);
+    margin: 0 2px;
+  }
+  .dots { display: flex; gap: 6px; }
+  .dot {
+    width: 7px; height: 7px; border-radius: 999px;
+    background: var(--surface-2);
+    transition: background 0.25s, width 0.25s;
+    cursor: pointer;
+  }
+  .dot.active { background: var(--accent-2); width: 22px; }
+  .progress {
+    position: fixed;
+    top: 0; left: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent-2), var(--accent), var(--accent-3));
+    transition: width 0.45s ease;
+    z-index: 100;
+  }
+
+  /* ── Shared slide elements ─────────────────────────────────── */
+  .eyebrow {
+    display: inline-block;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: var(--accent-2);
+    font-weight: 600;
+    margin-bottom: 1.25rem;
+  }
+  .pills { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 2rem; }
+  .pill {
+    font-size: 0.78rem;
+    padding: 0.4rem 0.85rem;
+    border-radius: 999px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .grid { display: grid; gap: 1.25rem; }
+  .grid.c2 { grid-template-columns: 1fr 1fr; }
+  .grid.c3 { grid-template-columns: repeat(3, 1fr); }
+  .grid.c4 { grid-template-columns: repeat(4, 1fr); }
+  @media (max-width: 900px) {
+    .grid.c3, .grid.c4 { grid-template-columns: 1fr 1fr; }
+  }
+
+  .card {
+    background: linear-gradient(160deg, rgba(15, 23, 42, 0.82) 0%, rgba(15, 23, 42, 0.55) 70%, rgba(30, 41, 59, 0.40) 100%);
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: var(--radius);
+    padding: 1.4rem 1.5rem;
+    backdrop-filter: blur(6px);
+    box-shadow: 0 16px 50px rgba(0,0,0,0.35);
+  }
+  .card .icon {
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    background: rgba(45, 212, 191, 0.12);
+    color: var(--accent-2);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono);
+    font-weight: 600;
+    margin-bottom: 0.85rem;
+  }
+  .card h4 { font-size: 1.1rem; margin-bottom: 0.45rem; }
+  .card p { font-size: 0.95rem; }
+
+  .stat {
+    padding: 1.5rem;
+    border-radius: var(--radius);
+    background: linear-gradient(160deg, rgba(15, 23, 42, 0.82), rgba(30, 41, 59, 0.50));
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    text-align: left;
+    box-shadow: 0 16px 50px rgba(0,0,0,0.35);
+  }
+  .stat .n { font-size: clamp(2rem, 4vw, 3rem); font-weight: 800; color: var(--text); letter-spacing: -0.03em; line-height: 1; }
+  .stat .l { color: var(--muted); font-size: 0.88rem; margin-top: 0.5rem; }
+  .stat .trend { color: var(--good); font-size: 0.8rem; margin-top: 0.25rem; font-family: var(--mono); }
+
+  pre.cmd {
+    background: #020617;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.85rem 1rem;
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    line-height: 1.5;
+    color: #cbd5e1;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0.5rem 0 0;
+    max-height: 32vh;
+  }
+  pre.cmd::before {
+    content: "▶";
+    color: var(--accent-2);
+    margin-right: 0.5rem;
+  }
+
+  .placeholder {
+    position: relative;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.7), rgba(30, 41, 59, 0.3));
+    min-height: 46vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    transition: border-color 0.25s;
+  }
+  .placeholder:hover { border-color: var(--accent-2); }
+  .placeholder img {
+    width: 100%; height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+  .placeholder .ph-label {
+    position: absolute;
+    inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    color: var(--dim);
+    font-size: 0.82rem;
+    text-align: center;
+    padding: 1rem;
+    pointer-events: none;
+  }
+  .placeholder .ph-label .ph-filename {
+    font-family: var(--mono);
+    color: var(--muted);
+    font-size: 0.75rem;
+    margin-top: 0.4rem;
+    padding: 0.25rem 0.65rem;
+    background: var(--surface-2);
+    border-radius: 6px;
+  }
+  .placeholder img[data-loaded="true"] + .ph-label { display: none; }
+
+  .demo-row { display: grid; grid-template-columns: 1.35fr 1fr; gap: 1.5rem; align-items: stretch; }
+  @media (max-width: 1000px) { .demo-row { grid-template-columns: 1fr; } }
+  .demo-meta { display: flex; flex-direction: column; gap: 0.85rem; min-width: 0; }
+  .demo-meta h2 { margin-bottom: 0.5rem; }
+  .demo-meta .bullets { color: var(--muted); font-size: 0.95rem; line-height: 1.55; }
+  .demo-meta .bullets li { margin-bottom: 0.35rem; }
+
+  /* ── Cover slide ───────────────────────────────────────────── */
+  .cover {
+    justify-content: center;
+    align-items: flex-start;
+  }
+  .cover > * { width: min(1200px, 100%); }
+  .cover .mark {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.7rem;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.25em;
+    color: var(--accent-2);
+    margin-bottom: 1.5rem;
+  }
+  .cover .mark::before {
+    content: "";
+    width: 36px; height: 1px; background: var(--accent-2);
+  }
+  .cover h1 span { background: linear-gradient(90deg, var(--accent) 0%, var(--accent-3) 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .cover .meta {
+    margin-top: 2.5rem;
+    display: flex; flex-wrap: wrap; gap: 2rem;
+    color: var(--dim);
+    font-size: 0.9rem;
+  }
+  .cover .meta strong { color: var(--text); font-weight: 500; }
+
+  /* ── Diagram slide ─────────────────────────────────────────── */
+  .diagram-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem 0 0;
+    overflow: hidden;
+  }
+  .diagram-wrap .mermaid {
+    width: 100%;
+    max-width: 1200px;
+  }
+
+  /* ── Workflow slide ────────────────────────────────────────── */
+  .flow { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0.85rem; margin-top: 1rem; }
+  @media (max-width: 1100px) { .flow { grid-template-columns: repeat(3, 1fr); } }
+  .step {
+    position: relative;
+    padding: 1.1rem 1rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .step .n {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--accent);
+    letter-spacing: 0.1em;
+  }
+  .step h4 {
+    font-size: 0.98rem;
+    margin: 0.25rem 0 0.35rem;
+  }
+  .step p { font-size: 0.82rem; color: var(--muted); }
+
+  /* ── Tables ────────────────────────────────────────────────── */
+  table.clean { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+  table.clean th, table.clean td { text-align: left; padding: 0.8rem 0.9rem; border-bottom: 1px solid var(--border); }
+  table.clean th { color: var(--accent); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.1em; }
+  table.clean td { color: var(--muted); }
+  table.clean td strong { color: var(--text); }
+  table.clean tr:last-child td { border-bottom: none; }
+
+  /* ── Thank-you slide ───────────────────────────────────────── */
+  .thanks {
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+  .thanks h1 { font-size: clamp(3rem, 7vw, 5.5rem); }
+  .thanks .sub { margin-top: 1rem; color: var(--muted); font-size: 1.2rem; }
+
+  /* ── Nav arrows ────────────────────────────────────────────── */
+  .arrow {
+    position: fixed;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 44px; height: 44px;
+    border-radius: 999px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    z-index: 40;
+    transition: background 0.2s, color 0.2s, transform 0.2s;
+    font-family: var(--mono);
+    font-size: 1rem;
+    user-select: none;
+  }
+  .arrow:hover { background: var(--surface-2); color: var(--accent); }
+  .arrow.prev { left: 1.25rem; }
+  .arrow.next { right: 1.25rem; }
+  .arrow.disabled { opacity: 0.25; pointer-events: none; }
+</style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+
+<div class="deck" id="deck">
+
+  <!-- ─────────── 1. COVER ─────────── -->
+  <section class="slide cover active" data-title="Cover">
+    <div class="mark">Regulatory Intelligence Platform</div>
+    <h1>Regulatory&nbsp;Watch<br /><span>from crawl to compliance signal</span></h1>
+    <p class="lead" style="margin-top:1.5rem">
+      A backend that continuously crawls regulatory sources, detects real changes,
+      scores their impact with LLMs, and turns unstructured text into
+      actionable, queryable compliance data.
+    </p>
+    <div class="meta">
+      <div><strong>Stack</strong> &middot; Python · FastAPI · Celery · Postgres · Redis</div>
+      <div><strong>LLM</strong> &middot; gpt-4o-mini · JSON mode</div>
+      <div><strong>Tests</strong> &middot; 138 passing</div>
+    </div>
+  </section>
+
+  <!-- ─────────── 4. ARCHITECTURE DIAGRAM ─────────── -->
+  <section class="slide" data-title="Architecture">
+    <span class="eyebrow">System architecture</span>
+    <h2>Four layers, bounded responsibilities, one DB as source of truth.</h2>
+    <div class="diagram-wrap">
+      <div class="mermaid">
+flowchart LR
+  S[🌐 Sources<br/>web · PDF · RSS]:::src --> I[Ingestion<br/>Crawl4AI · pdfplumber · feedparser]:::layer
+  I --> R[(raw_documents<br/>+ SHA-256)]:::db
+  R --> V[Version &amp; diff<br/>change_detection.py]:::layer
+  V --> SV[(source_versions<br/>change_events)]:::db
+  SV --> L[LLM layer<br/>significance · obligations]:::llm
+  L --> E[(entities<br/>obligations<br/>country fields)]:::db
+  L --> O[Observability<br/>structlog · llm_usage ledger]:::obs
+  E --> API[📊 Queryable API / CLI]:::api
+
+  classDef src fill:#0b111f,stroke:#475569,color:#f1f5f9
+  classDef layer fill:#0f172a,stroke:#14b8a6,color:#2dd4bf
+  classDef db fill:#1e293b,stroke:#64748b,color:#e2e8f0
+  classDef llm fill:#0f172a,stroke:#7dd3fc,color:#7dd3fc
+  classDef obs fill:#0f172a,stroke:#fbbf24,color:#fbbf24
+  classDef api fill:#0f172a,stroke:#4ade80,color:#4ade80
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── 5. WORKFLOW IN 6 STEPS ─────────── -->
+  <section class="slide" data-title="Workflow">
+    <span class="eyebrow">End-to-end workflow</span>
+    <h2>From a source URL to a structured compliance alert &mdash; six stages.</h2>
+    <div class="flow">
+      <div class="step"><div class="n">01 · CRAWL</div><h4>Fetch</h4><p>Connector picks right handler. JS rendering for web, pdfplumber for PDFs.</p></div>
+      <div class="step"><div class="n">02 · HASH</div><h4>Persist</h4><p>SHA-256 of body. Write <span class="mono">raw_documents</span>.</p></div>
+      <div class="step"><div class="n">03 · DIFF</div><h4>Version</h4><p>If hash changed, new <span class="mono">source_version</span> and <span class="mono">change_event</span>.</p></div>
+      <div class="step"><div class="n">04 · SCORE</div><h4>LLM pass #1</h4><p>Significance + topic + entities + origin country.</p></div>
+      <div class="step"><div class="n">05 · EXTRACT</div><h4>LLM pass #2</h4><p>If score ≥ 0.5: actor/action/deadline/penalty rows.</p></div>
+      <div class="step"><div class="n">06 · INDEX</div><h4>Link</h4><p>Entities, codes, country tags &mdash; ready for query &amp; alert.</p></div>
+    </div>
+    <p class="lead" style="margin-top:2rem"><strong>Key insight:</strong> every LLM call is gated. Unchanged content costs $0. Cosmetic changes stay cheap. We only pay for the signal.</p>
+  </section>
+
+  <!-- ─────────── 6. DATA MODEL ─────────── -->
+  <section class="slide" data-title="Data model">
+    <span class="eyebrow">Data foundation</span>
+    <h2>Six tables that turn unstructured regulatory text into queryable facts.</h2>
+    <table class="clean" style="margin-top:1rem">
+      <thead><tr><th>Table</th><th>Role</th><th>Key fields</th></tr></thead>
+      <tbody>
+        <tr><td><strong>raw_documents</strong></td><td>Every crawl snapshot</td><td class="mono">source_url · content_hash · raw_text</td></tr>
+        <tr><td><strong>source_versions</strong></td><td>Promoted, deduped versions</td><td class="mono">title · language · page_count</td></tr>
+        <tr><td><strong>change_events</strong></td><td>Detected transitions + LLM output</td><td class="mono">significance_score · topic · origin_countries · destination_countries · trade_flow_direction</td></tr>
+        <tr><td><strong>entities</strong></td><td>Agencies · regulations · HS/HTS codes</td><td class="mono">canonical_key · entity_type · mention_count</td></tr>
+        <tr><td><strong>obligations</strong></td><td>Structured duties per event</td><td class="mono">actor · action · deadline_date · penalty · obligation_type</td></tr>
+        <tr><td><strong>llm_usage.jsonl</strong></td><td>Token &amp; cost ledger (append-only)</td><td class="mono">scope · model · tokens · total_cost_usd</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ─────────── 7. LLM SCOPES ─────────── -->
+  <section class="slide" data-title="LLM scopes">
+    <span class="eyebrow">LLM usage</span>
+    <h2>Three narrowly-scoped jobs, each gated, each measured.</h2>
+    <div class="grid c3" style="margin-top:1rem">
+      <div class="card">
+        <div class="icon">S</div>
+        <h4>scoring</h4>
+        <p><strong>Runs on:</strong> every change event.<br><strong>Returns:</strong> significance, topic, summary, entities, origin country, trade flow.<br><strong>Cost:</strong> ~$0.0004 per call.</p>
+      </div>
+      <div class="card" style="border-color: rgba(125, 211, 252, 0.35)">
+        <div class="icon" style="background:rgba(125, 211, 252, 0.12); color: var(--accent-3)">O</div>
+        <h4>obligations</h4>
+        <p><strong>Runs on:</strong> score ≥ 0.5, substantive/critical only.<br><strong>Returns:</strong> actor, action, deadline, penalty rows.<br><strong>Cost:</strong> ~$0.00025 per call.</p>
+      </div>
+      <div class="card" style="border-color: rgba(251, 191, 36, 0.35)">
+        <div class="icon" style="background:rgba(251, 191, 36, 0.12); color: var(--warn)">W</div>
+        <h4>web_extract</h4>
+        <p><strong>Runs on:</strong> rare &mdash; noisy HTML only.<br><strong>Returns:</strong> clean body text.<br><strong>Cost:</strong> ~$0.0001 per call.</p>
+      </div>
+    </div>
+    <p class="lead" style="margin-top:2rem">Gating makes the unit economics work: 53 scoring calls but only 27 obligation calls in the last run.</p>
+  </section>
+
+  <!-- ─────────── 8. RESILIENCE ─────────── -->
+  <section class="slide" data-title="Resilience">
+    <span class="eyebrow">Production-grade plumbing</span>
+    <h2>Designed to fail safely and observably.</h2>
+    <div class="grid c4" style="margin-top:1rem">
+      <div class="card"><div class="icon">⚡</div><h4>Circuit breaker</h4><p>Redis-backed, cross-worker. Trips after N consecutive LLM errors.</p></div>
+      <div class="card"><div class="icon">⏱</div><h4>Rate limits</h4><p>Per-Celery-task caps stop runaway LLM spend.</p></div>
+      <div class="card"><div class="icon">🔁</div><h4>Retries</h4><p>Idempotent scoring &amp; obligations &mdash; re-entrant after crashes.</p></div>
+      <div class="card"><div class="icon">📜</div><h4>Structured logs</h4><p>structlog JSON, per-event correlation IDs.</p></div>
+      <div class="card"><div class="icon">🧪</div><h4>138 tests</h4><p>Unit + schema + regex coverage. Green CI gate.</p></div>
+      <div class="card"><div class="icon">🔐</div><h4>Secrets policy</h4><p>Env-first, vault-friendly, documented in <span class="mono">docs/secrets.md</span>.</p></div>
+      <div class="card"><div class="icon">💰</div><h4>Token ledger</h4><p>Every LLM call persisted as JSONL with USD cost.</p></div>
+      <div class="card"><div class="icon">🗃</div><h4>Alembic-only schema</h4><p>No auto-<span class="mono">create_all()</span> in prod.</p></div>
+    </div>
+  </section>
+
+  <!-- ─────────── 9. DEMO: docker ps ─────────── -->
+  <section class="slide" data-title="Demo · Stack">
+    <span class="eyebrow">Evidence · 01</span>
+    <div class="demo-row">
+      <div class="demo-meta">
+        <h2>The stack, running.</h2>
+        <ul class="bullets">
+          <li>API, worker, scheduler, DB, Redis.</li>
+          <li>Orchestrated with Docker Compose.</li>
+          <li>One command boots the whole system.</li>
+        </ul>
+        <h3 style="margin-top:1rem">Command</h3>
+        <pre class="cmd">docker compose ps</pre>
+        <p class="subtle" style="font-size:0.78rem;margin-top:0.5rem">Save screenshot as <span class="mono">01-docker-stack.png</span></p>
+      </div>
+      <div class="placeholder">
+        <img src="screenshots/01-docker-stack.png" alt="" onload="this.dataset.loaded='true'" onerror="this.style.display='none'" />
+        <div class="ph-label">
+          <div>Screenshot goes here</div>
+          <div class="ph-filename">screenshots/01-docker-stack.png</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── 10. DEMO: CHANGE EVENTS ─────────── -->
+  <section class="slide" data-title="Demo · Changes">
+    <span class="eyebrow">Evidence · 02</span>
+    <div class="demo-row">
+      <div class="demo-meta">
+        <h2>Change events &mdash; scored and explained.</h2>
+        <ul class="bullets">
+          <li>Each row: a real content diff from a regulator.</li>
+          <li>Score, topic, plain-English summary, entities.</li>
+          <li>Filter by domain, date, score, topic.</li>
+        </ul>
+        <h3 style="margin-top:1rem">Command</h3>
+        <pre class="cmd">docker compose exec -T worker python scripts/show_changes.py \
+  --domain cbp.gov --limit 15 --summary --min-score 0.4</pre>
+        <p class="subtle" style="font-size:0.78rem;margin-top:0.5rem">Save as <span class="mono">02-show-changes-summary.png</span></p>
+      </div>
+      <div class="placeholder">
+        <img src="screenshots/02-show-changes-summary.png" alt="" onload="this.dataset.loaded='true'" onerror="this.style.display='none'" />
+        <div class="ph-label">
+          <div>LLM-scored change events</div>
+          <div class="ph-filename">screenshots/02-show-changes-summary.png</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── 11. DEMO: ENTITIES ─────────── -->
+  <section class="slide" data-title="Demo · Entities">
+    <span class="eyebrow">Evidence · 03</span>
+    <div class="demo-row">
+      <div class="demo-meta">
+        <h2>Entity catalogue &mdash; 1,459 tariff codes indexed.</h2>
+        <ul class="bullets">
+          <li>HS/HTS codes extracted from raw PDFs (free, no LLM).</li>
+          <li>Complete Section 301 China tariff set (9903.01.*).</li>
+          <li>Agencies, regulations, programs &mdash; all queryable.</li>
+        </ul>
+        <h3 style="margin-top:1rem">Command</h3>
+        <pre class="cmd">docker compose exec -T db psql -U regwatch -d regwatch -c "
+SELECT display_name, mention_count FROM entities
+WHERE entity_type = 'code'
+ORDER BY mention_count DESC LIMIT 15;"</pre>
+        <p class="subtle" style="font-size:0.78rem;margin-top:0.5rem">Save as <span class="mono">03-show-entities-codes.png</span></p>
+      </div>
+      <div class="placeholder">
+        <img src="screenshots/03-show-entities-codes.png" alt="" onload="this.dataset.loaded='true'" onerror="this.style.display='none'" />
+        <div class="ph-label">
+          <div>Top tariff codes by mention count</div>
+          <div class="ph-filename">screenshots/03-show-entities-codes.png</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── 12. DEMO: OBLIGATIONS ─────────── -->
+  <section class="slide" data-title="Demo · Obligations">
+    <span class="eyebrow">Evidence · 04</span>
+    <div class="demo-row">
+      <div class="demo-meta">
+        <h2>Structured obligations &mdash; duties you can query.</h2>
+        <ul class="bullets">
+          <li>Actor, action, deadline, penalty, obligation type.</li>
+          <li>Parsed from substantive/critical events only.</li>
+          <li>245 obligation rows extracted.</li>
+        </ul>
+        <h3 style="margin-top:1rem">Command</h3>
+        <pre class="cmd">docker compose exec -T worker python scripts/show_obligations.py --limit 20</pre>
+        <p class="subtle" style="font-size:0.78rem;margin-top:0.5rem">Save as <span class="mono">04-show-obligations.png</span></p>
+      </div>
+      <div class="placeholder">
+        <img src="screenshots/04-show-obligations.png" alt="" onload="this.dataset.loaded='true'" onerror="this.style.display='none'" />
+        <div class="ph-label">
+          <div>Structured obligations listing</div>
+          <div class="ph-filename">screenshots/04-show-obligations.png</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── 13. DEMO: COUNTRIES ─────────── -->
+  <section class="slide" data-title="Demo · Countries">
+    <span class="eyebrow">Evidence · 05</span>
+    <div class="demo-row">
+      <div class="demo-meta">
+        <h2>Country &amp; trade-flow &mdash; who is affected?</h2>
+        <ul class="bullets">
+          <li><strong>origin_countries</strong>: LLM-extracted ISO-2 (CN, KR, ID&hellip;).</li>
+          <li><strong>destination_countries</strong>: derived from source domain, always correct.</li>
+          <li><strong>trade_flow_direction</strong>: inbound · outbound · bilateral · global.</li>
+        </ul>
+        <h3 style="margin-top:1rem">Command</h3>
+        <pre class="cmd">docker compose exec -T db psql -U regwatch -d regwatch -c "
+SELECT substring(source_url FROM '[^/]+\.pdf\$') AS doc,
+       significance_score, change_type, topic,
+       origin_countries, destination_countries, trade_flow_direction
+FROM change_events
+WHERE origin_countries IS NOT NULL
+ORDER BY significance_score DESC LIMIT 10;"</pre>
+        <p class="subtle" style="font-size:0.78rem;margin-top:0.5rem">Save as <span class="mono">05-sql-countries.png</span></p>
+      </div>
+      <div class="placeholder">
+        <img src="screenshots/05-sql-countries.png" alt="" onload="this.dataset.loaded='true'" onerror="this.style.display='none'" />
+        <div class="ph-label">
+          <div>Country &amp; trade-flow data</div>
+          <div class="ph-filename">screenshots/05-sql-countries.png</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── 14. DEMO: COST REPORT ─────────── -->
+  <section class="slide" data-title="Demo · Cost">
+    <span class="eyebrow">Evidence · 06</span>
+    <div class="demo-row">
+      <div class="demo-meta">
+        <h2>LLM cost &mdash; observed, not guessed.</h2>
+        <ul class="bullets">
+          <li>Every LLM call logged with tokens and USD.</li>
+          <li>Breakdown by scope, model, and day.</li>
+          <li>Total lifetime cost: <strong>$0.06</strong> for the full dataset.</li>
+        </ul>
+        <h3 style="margin-top:1rem">Command</h3>
+        <pre class="cmd">docker compose exec -T worker python scripts/llm_cost_report.py</pre>
+        <p class="subtle" style="font-size:0.78rem;margin-top:0.5rem">Save as <span class="mono">06-llm-cost-report.png</span></p>
+      </div>
+      <div class="placeholder">
+        <img src="screenshots/06-llm-cost-report.png" alt="" onload="this.dataset.loaded='true'" onerror="this.style.display='none'" />
+        <div class="ph-label">
+          <div>LLM token &amp; cost report</div>
+          <div class="ph-filename">screenshots/06-llm-cost-report.png</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── 15. DEMO: TESTS ─────────── -->
+  <section class="slide" data-title="Demo · Tests">
+    <span class="eyebrow">Evidence · 07</span>
+    <div class="demo-row">
+      <div class="demo-meta">
+        <h2>138 tests, green in under a second.</h2>
+        <ul class="bullets">
+          <li>Entity normalisation &amp; type inference.</li>
+          <li>Country resolver &amp; ISO-2 cleaner.</li>
+          <li>LLM schema &amp; circuit breaker invariants.</li>
+        </ul>
+        <h3 style="margin-top:1rem">Command</h3>
+        <pre class="cmd">docker compose exec -T worker python -m pytest tests/ -q</pre>
+        <p class="subtle" style="font-size:0.78rem;margin-top:0.5rem">Save as <span class="mono">07-pytest.png</span></p>
+      </div>
+      <div class="placeholder">
+        <img src="screenshots/07-pytest.png" alt="" onload="this.dataset.loaded='true'" onerror="this.style.display='none'" />
+        <div class="ph-label">
+          <div>pytest green run</div>
+          <div class="ph-filename">screenshots/07-pytest.png</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── 16. NUMBERS ─────────── -->
+  <section class="slide" data-title="Numbers">
+    <span class="eyebrow">Numbers that matter</span>
+    <h2>What this codebase represents, measured.</h2>
+    <div class="grid c4" style="margin-top:1rem">
+      <div class="stat"><div class="n">5,615</div><div class="l">Raw documents ingested</div></div>
+      <div class="stat"><div class="n">314</div><div class="l">Change events scored</div><div class="trend">+37 today</div></div>
+      <div class="stat"><div class="n">1,459</div><div class="l">HS / HTS codes indexed</div></div>
+      <div class="stat"><div class="n">245</div><div class="l">Structured obligations</div><div class="trend">+136 today</div></div>
+      <div class="stat"><div class="n">138</div><div class="l">Automated tests passing</div></div>
+      <div class="stat"><div class="n">$0.06</div><div class="l">Total LLM spend, lifetime</div></div>
+      <div class="stat"><div class="n">&lt;1s</div><div class="l">Test suite runtime</div></div>
+      <div class="stat"><div class="n">10</div><div class="l">Alembic migrations</div></div>
+    </div>
+  </section>
+
+  <!-- ─────────── 17. WHAT'S NEXT ─────────── -->
+  <section class="slide" data-title="Next">
+    <span class="eyebrow">Roadmap</span>
+    <h2>The engine is built. Next is distribution.</h2>
+    <div class="grid c3" style="margin-top:1rem">
+      <div class="card">
+        <h4 style="color:var(--accent)">Outbound API</h4>
+        <p>REST endpoints with filters on topic, country, HS-prefix, score. Cursor pagination, API-key auth.</p>
+      </div>
+      <div class="card">
+        <h4 style="color:var(--accent)">Saved filters &amp; alerts</h4>
+        <p>Slack &amp; email dispatch. Users subscribe to what they care about.</p>
+      </div>
+      <div class="card">
+        <h4 style="color:var(--accent)">Dashboard</h4>
+        <p>Grafana + Prometheus metrics. Circuit-breaker, ingestion lag, cost-per-topic.</p>
+      </div>
+      <div class="card">
+        <h4 style="color:var(--accent-3)">PDF OCR fallback</h4>
+        <p>For image-only regulator PDFs where pdfplumber returns empty.</p>
+      </div>
+      <div class="card">
+        <h4 style="color:var(--accent-3)">Integration tests</h4>
+        <p>Full Docker stack + mocked OpenAI &mdash; end-to-end assertion on one URL.</p>
+      </div>
+      <div class="card">
+        <h4 style="color:var(--accent-3)">Multi-tenant</h4>
+        <p>Row-level security &amp; per-tenant source subscriptions.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── 18. THANKS ─────────── -->
+  <section class="slide thanks" data-title="Thanks">
+    <span class="eyebrow">Thank you</span>
+    <h1>Questions?</h1>
+    <p class="sub">Regulatory Watch &mdash; crawl, detect, score, extract, index, alert.</p>
+    <p class="subtle" style="margin-top:3rem;font-size:0.85rem">
+      Full source: <span class="mono">regulation-prj-v1/</span> &nbsp;·&nbsp;
+      Architecture diagram: <span class="mono">docs/architecture_v2.html</span>
+    </p>
+  </section>
+
+</div>
+
+<!-- HUD -->
+<div class="arrow prev" id="prev" title="Previous (←)">‹</div>
+<div class="arrow next" id="next" title="Next (→)">›</div>
+
+<div class="hud">
+  <div class="left">
+    <span class="brand">Regulatory<span>.</span>Watch</span>
+  </div>
+  <div class="dots" id="dots"></div>
+  <div class="right">
+    <span class="hint">
+      <kbd>←</kbd><kbd>→</kbd> navigate &nbsp;·&nbsp; <kbd>F</kbd> fullscreen &nbsp;·&nbsp; <kbd>P</kbd> print
+    </span>
+    <span class="counter" id="counter">1 / 18</span>
+  </div>
+</div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll(".slide"));
+  const dotsEl = document.getElementById("dots");
+  const counterEl = document.getElementById("counter");
+  const progressEl = document.getElementById("progress");
+  const prevBtn = document.getElementById("prev");
+  const nextBtn = document.getElementById("next");
+
+  slides.forEach((_, i) => {
+    const d = document.createElement("span");
+    d.className = "dot" + (i === 0 ? " active" : "");
+    d.dataset.idx = i;
+    d.addEventListener("click", () => go(i));
+    dotsEl.appendChild(d);
+  });
+
+  let current = 0;
+  function go(i) {
+    if (i < 0 || i >= slides.length || i === current) return;
+    slides[current].classList.remove("active");
+    slides[current].classList.add("prev");
+    slides[i].classList.remove("prev");
+    slides[i].classList.add("active");
+    document.querySelectorAll(".dot").forEach((d, idx) =>
+      d.classList.toggle("active", idx === i)
+    );
+    current = i;
+    counterEl.textContent = `${i + 1} / ${slides.length}`;
+    progressEl.style.width = `${((i + 1) / slides.length) * 100}%`;
+    prevBtn.classList.toggle("disabled", i === 0);
+    nextBtn.classList.toggle("disabled", i === slides.length - 1);
+    if (location.hash !== `#${i + 1}`) history.replaceState(null, "", `#${i + 1}`);
+  }
+
+  prevBtn.addEventListener("click", () => go(current - 1));
+  nextBtn.addEventListener("click", () => go(current + 1));
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " " || e.key === "l") {
+      e.preventDefault(); go(current + 1);
+    } else if (e.key === "ArrowLeft" || e.key === "PageUp" || e.key === "h") {
+      e.preventDefault(); go(current - 1);
+    } else if (e.key === "Home") {
+      go(0);
+    } else if (e.key === "End") {
+      go(slides.length - 1);
+    } else if (e.key === "f" || e.key === "F") {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+      else document.exitFullscreen();
+    } else if (e.key === "p" || e.key === "P") {
+      window.print();
+    }
+  });
+
+  const hash = parseInt(location.hash.replace("#", ""), 10);
+  if (!isNaN(hash) && hash >= 1 && hash <= slides.length) go(hash - 1);
+  else { progressEl.style.width = `${(1 / slides.length) * 100}%`; counterEl.textContent = `1 / ${slides.length}`; }
+
+  document.addEventListener("click", (e) => {
+    if (e.target.closest(".arrow, .dot, .slide a, pre, .placeholder")) return;
+    if (e.clientX > window.innerWidth / 2) go(current + 1);
+    else go(current - 1);
+  });
+</script>
+</body>
+</html>
