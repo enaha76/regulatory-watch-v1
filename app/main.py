@@ -20,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.database import create_db_and_tables
 from app.logging_setup import get_logger, setup_logging
-from app.routers import domains, health
+from app.routers import alerts, domains, health, subscriptions
 
 setup_logging()
 logger = get_logger(__name__)
@@ -67,6 +67,8 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(domains.router)
+app.include_router(subscriptions.router)
+app.include_router(alerts.router)
 
 
 @app.get("/", tags=["Root"])

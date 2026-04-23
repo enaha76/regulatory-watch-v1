@@ -329,6 +329,38 @@ def extract_obligations_task(self, event_id: str, force: bool = False):
     return result
 
 
+# ── M5 Alerting Engine ───────────────────────────────────────────────────────
+@celery.task(
+    name="app.celery_app.match_change_event",
+    bind=True,
+    max_retries=2,
+    acks_late=True,
+)
+def match_change_event(self, event_id: str):
+    """
+    M5 — match a scored ChangeEvent against all active user subscriptions
+    and insert alert rows for each match.
+
+    Auto-enqueued by ``score_change_event`` after M4 scoring completes.
+    Uses PostgreSQL full-text search (TSVector/TSQuery) — zero LLM cost.
+    """
+    from uuid import UUID
+
+    from app.services.matching import match_event
+
+    log = logger.bind(task="match_change_event", event_id=event_id)
+    log.info("starting")
+
+    try:
+        result = match_event(UUID(event_id))
+    except Exception as exc:  # noqa: BLE001
+        log.error("crashed", error=str(exc), error_type=type(exc).__name__)
+        raise self.retry(exc=exc, countdown=10 * (2 ** self.request.retries))
+
+    log.info("done", alerts_created=result.get("alerts_created", 0))
+    return result
+
+
 # ── Web crawl ────────────────────────────────────────────────────────────────
 @celery.task(name="app.celery_app.web_crawl_task", bind=True, max_retries=3)
 def web_crawl_task(

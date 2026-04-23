@@ -1,20 +1,25 @@
 """
 Geographic helpers for change events.
 
-Two responsibilities:
+Three responsibilities:
 
-1. `resolve_destination_countries(url)`  — deterministically map a source
-   URL's host to the jurisdiction its regulator governs. Zero LLM cost.
-   This is the `destination_countries` column on change_events.
+1. `resolve_jurisdiction(url)`            — deterministically map a source
+   URL's host to the ISO-2 code(s) of the jurisdiction whose regulator
+   published it. Zero LLM cost.
 
-2. `normalize_country_codes(codes)`      — clean an LLM-produced list of
+2. `normalize_country_codes(codes)`       — clean an LLM-produced list of
    country strings into deduped uppercase ISO-3166 alpha-2 codes
    (with a couple of allowed pseudo-codes: "EU", "GB" for UK).
-   This is fed into the `origin_countries` column.
+
+3. `assign_trade_countries(…)`            — combine the deterministic
+   jurisdiction with the LLM-extracted countries using the
+   `trade_flow_direction` to correctly decide which are origins and
+   which are destinations.  Fixes the "hardcoded trade flow" flaw
+   where the regulator was always assumed to be the destination.
 
 The host→jurisdiction table is deliberately small and conservative: when
 in doubt we return an empty list rather than guessing. Unknown sources
-simply leave `destination_countries` NULL.
+simply leave the jurisdiction empty.
 """
 from __future__ import annotations
 
@@ -23,7 +28,7 @@ from typing import Iterable, Optional
 from urllib.parse import urlparse
 
 
-# ── Host → destination jurisdiction mapping ─────────────────────────────────
+# ── Host → regulator jurisdiction mapping ────────────────────────────────────
 #
 # Domain suffix match: the LONGEST suffix wins, so
 # `trade.ec.europa.eu`  → EU,
@@ -92,11 +97,14 @@ def _host_of(url: str) -> str:
     return host.rstrip(".")
 
 
-def resolve_destination_countries(url: str) -> list[str]:
+def resolve_jurisdiction(url: str) -> list[str]:
     """
-    Map the source URL to the ISO-2 code(s) of the jurisdiction whose
-    regulator published it. Returns [] for unknown sources so callers
-    can fall back to NULL.
+    Map the source URL to the ISO-2 code(s) of the *regulator's*
+    jurisdiction. This is NOT necessarily the trade destination — use
+    `assign_trade_countries()` to place the jurisdiction in the correct
+    origin/destination bucket based on `trade_flow_direction`.
+
+    Returns [] for unknown sources so callers can fall back to NULL.
 
     Uses longest-suffix match: `www.trade.ec.europa.eu/foo/bar` matches
     `ec.europa.eu` before `europa.eu`.
@@ -114,6 +122,62 @@ def resolve_destination_countries(url: str) -> list[str]:
         if hit is not None:
             return list(hit)
     return []
+
+
+def assign_trade_countries(
+    *,
+    jurisdiction: list[str],
+    llm_origin_countries: list[str],
+    trade_flow_direction: Optional[str],
+) -> tuple[list[str], list[str]]:
+    """
+    Combine the deterministic jurisdiction with LLM-extracted countries,
+    respecting the trade flow direction.
+
+    Returns ``(origin_countries, destination_countries)``.
+
+    Logic:
+      - **inbound**  — goods entering the regulator's jurisdiction.
+                        Jurisdiction → destination; LLM countries → origin.
+      - **outbound** — goods leaving the regulator's jurisdiction.
+                        Jurisdiction → origin; LLM countries → destination.
+      - **bilateral** — both ways (FTA, mutual sanctions, MRA).
+                         Jurisdiction + LLM countries appear in BOTH buckets.
+      - **global / None** — multilateral or no trade aspect.
+                            Jurisdiction → destination (default behaviour);
+                            LLM countries → origin (if any).
+    """
+    def _dedup(a: list[str], b: list[str]) -> list[str]:
+        seen: set[str] = set()
+        out: list[str] = []
+        for code in a + b:
+            if code not in seen:
+                seen.add(code)
+                out.append(code)
+        return out
+
+    direction = (trade_flow_direction or "").strip().lower()
+
+    if direction == "inbound":
+        # Goods coming IN → jurisdiction is destination
+        return (llm_origin_countries, jurisdiction)
+
+    elif direction == "outbound":
+        # Goods going OUT → jurisdiction is origin
+        return (jurisdiction, llm_origin_countries)
+
+    elif direction == "bilateral":
+        # Both ways → jurisdiction + LLM countries in BOTH buckets
+        combined = _dedup(jurisdiction, llm_origin_countries)
+        return (combined, combined)
+
+    else:
+        # global / None / unknown → default: jurisdiction as destination
+        return (llm_origin_countries, jurisdiction)
+
+
+# Keep backward-compatible alias so any external caller doesn't break.
+resolve_destination_countries = resolve_jurisdiction
 
 
 # ── LLM output sanitisation ────────────────────────────────────────────────

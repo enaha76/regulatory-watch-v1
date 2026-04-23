@@ -404,3 +404,92 @@ class Obligation(SQLModel, table=True):
 
     llm_model: Optional[str] = Field(default=None, max_length=50)
     extracted_at: datetime = Field(default_factory=utcnow)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# UserSubscription — M5: user alerting profiles
+# ═════════════════════════════════════════════════════════════════════════════
+# Each row represents one subscription "rule" a user has configured.
+# The M5 matching engine evaluates every active subscription against each
+# newly scored ChangeEvent using a combination of structured metadata
+# pre-filters and PostgreSQL full-text search (TSVector/TSQuery).
+# A user can have multiple subscriptions (e.g. "My China Sanctions Watch",
+# "EU Environmental Alerts").
+class UserSubscription(SQLModel, table=True):
+    __tablename__ = "user_subscriptions"
+    __table_args__ = (
+        CheckConstraint(
+            "min_significance >= 0.0 AND min_significance <= 1.0",
+            name="ck_user_subscriptions_min_significance",
+        ),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    user_email: str = Field(max_length=255, index=True)
+    label: str = Field(max_length=255, default="Default Subscription")
+
+    # ── Structured metadata pre-filters (Stage 1) ────────────────────
+    # NULL means "match any".
+    topics: Optional[list[str]] = Field(
+        default=None,
+        sa_column=Column(ARRAY(String(length=40)), nullable=True),
+    )
+    origin_countries: Optional[list[str]] = Field(
+        default=None,
+        sa_column=Column(ARRAY(String(length=8)), nullable=True),
+    )
+    destination_countries: Optional[list[str]] = Field(
+        default=None,
+        sa_column=Column(ARRAY(String(length=8)), nullable=True),
+    )
+    min_significance: float = Field(default=0.6)
+
+    # ── Full-text keyword percolation (Stage 2) ──────────────────────
+    # Raw PostgreSQL tsquery string. Examples:
+    #   "lithium & batteri:*"        → lithium AND battery/batteries
+    #   "ECCN & 3A090"               → exact code match
+    #   "tariff | customs"           → tariff OR customs
+    # NULL means "skip keyword check — only use metadata filters".
+    keyword_query: Optional[str] = Field(
+        default=None, sa_column=Column(Text, nullable=True),
+    )
+
+    is_active: bool = Field(default=True, index=True)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Alert — M5: generated notifications linking users to matching events
+# ═════════════════════════════════════════════════════════════════════════════
+# One row per (subscription, change_event) match. The unique constraint
+# prevents duplicate alerts if the matching task is retried.
+class Alert(SQLModel, table=True):
+    __tablename__ = "alerts"
+    __table_args__ = (
+        UniqueConstraint(
+            "subscription_id", "change_event_id",
+            name="uq_alerts_subscription_event",
+        ),
+        CheckConstraint(
+            "status IN ('unread','read','dismissed')",
+            name="ck_alerts_status",
+        ),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    subscription_id: UUID = Field(
+        foreign_key="user_subscriptions.id", index=True,
+    )
+    change_event_id: UUID = Field(
+        foreign_key="change_events.id", index=True,
+    )
+
+    # XAI — store exactly which keywords triggered the alert so the
+    # UI can highlight them for the compliance officer.
+    matched_keywords: Optional[list] = Field(
+        default=None, sa_column=Column(JSON, nullable=True),
+    )
+
+    status: str = Field(default="unread", max_length=20)
+    created_at: datetime = Field(default_factory=utcnow)

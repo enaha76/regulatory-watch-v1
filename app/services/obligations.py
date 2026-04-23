@@ -308,6 +308,10 @@ def extract_obligations(event_id: UUID, *, force: bool = False) -> dict:
             if sv is not None:
                 title = sv.title
                 content = (sv.raw_text or "")[:max_content]
+        # For modified events, if we got the full text above, use it.
+        # Only fall back to diff if no full text is available at all.
+        # (Fix 3 — Contextless Diff: the diff alone lacks actor/section
+        # context needed for obligation extraction.)
         if not content and event.unified_diff:
             content = event.unified_diff[:max_content]
         if not content and event.summary:

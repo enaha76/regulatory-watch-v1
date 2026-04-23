@@ -281,9 +281,11 @@ def _build_user_prompt(
     removed_chars: int,
     unified_diff: Optional[str],
     new_content: Optional[str] = None,
+    context_snippet: Optional[str] = None,
 ) -> str:
     """
-    Build the user prompt. For `modified` events we send the unified diff;
+    Build the user prompt. For `modified` events we send the unified diff
+    plus a surrounding context window so the LLM knows the section/actor;
     for `created` events we send a snippet of the actual document content
     so the LLM can score based on substance rather than mere existence.
     """
@@ -322,6 +324,16 @@ def _build_user_prompt(
             diff_snippet,
             "```",
         ])
+        # Fix 3 — Contextless Diff: include surrounding document context
+        # so the LLM knows which section/actor the diff applies to.
+        if context_snippet:
+            parts.extend([
+                "",
+                "Surrounding document context (for understanding who/what the diff applies to):",
+                "```",
+                context_snippet,
+                "```",
+            ])
 
     return "\n".join(parts)
 
@@ -451,14 +463,22 @@ def score_event(event_id: UUID, *, retry_errors: bool = False) -> dict:
 
         # Pull the new version's title + (for `created` events) its raw text
         # so the LLM can score on substance, not just existence.
+        # For `modified` events, also grab a trimmed context window
+        # (Fix 3 — Contextless Diff) so the LLM knows which
+        # section/actor the diff applies to.
         title: Optional[str] = None
         new_content: Optional[str] = None
+        context_snippet: Optional[str] = None
         if event.new_version_id:
             sv = session.get(SourceVersion, event.new_version_id)
             if sv is not None:
                 title = sv.title
                 if event.diff_kind == "created":
                     new_content = sv.raw_text
+                elif event.diff_kind == "modified":
+                    # Provide surrounding context so the LLM knows
+                    # which section/actor the diff applies to.
+                    context_snippet = _trim_content(sv.raw_text or "")
 
         user_prompt = _build_user_prompt(
             source_url=event.source_url,
@@ -468,6 +488,7 @@ def score_event(event_id: UUID, *, retry_errors: bool = False) -> dict:
             removed_chars=event.removed_chars or 0,
             unified_diff=event.unified_diff,
             new_content=new_content,
+            context_snippet=context_snippet,
         )
 
         raw = ""
@@ -518,8 +539,9 @@ def score_event(event_id: UUID, *, retry_errors: bool = False) -> dict:
 
         # ── Persist ───────────────────────────────────────────────────
         from app.services.geo import (
+            assign_trade_countries,
             normalize_country_codes,
-            resolve_destination_countries,
+            resolve_jurisdiction,
         )
 
         event.significance_score = parsed.significance_score
@@ -531,11 +553,23 @@ def score_event(event_id: UUID, *, retry_errors: bool = False) -> dict:
             if parsed.deadline_changes
             else None
         )
+        # M5 translation note: when the source document's language matches
+        # the user's preferred_lang, bypass the English summary entirely.
+        # The LLM should summarize directly in the source language to avoid
+        # the lossy round-trip (source_lang → EN → source_lang).
+        # See docs/architectural_problems.md §2 for rationale.
         event.summary = parsed.compliance_summary
-        # Country / trade-flow fields — LLM for origin, deterministic for dest.
-        origin_iso = normalize_country_codes(parsed.origin_countries)
+        # Fix 1 — Hardcoded Trade Flow: use assign_trade_countries()
+        # which respects trade_flow_direction instead of blindly mapping
+        # the URL jurisdiction to destination_countries.
+        jurisdiction = resolve_jurisdiction(event.source_url)
+        llm_origins = normalize_country_codes(parsed.origin_countries)
+        origin_iso, dest_iso = assign_trade_countries(
+            jurisdiction=jurisdiction,
+            llm_origin_countries=llm_origins,
+            trade_flow_direction=parsed.trade_flow_direction,
+        )
         event.origin_countries = origin_iso or None
-        dest_iso = resolve_destination_countries(event.source_url)
         event.destination_countries = dest_iso or None
         event.trade_flow_direction = parsed.trade_flow_direction
         event.llm_model = settings.OPENAI_MODEL
@@ -555,6 +589,7 @@ def score_event(event_id: UUID, *, retry_errors: bool = False) -> dict:
                  origin_countries=origin_iso,
                  destination_countries=dest_iso,
                  trade_flow_direction=parsed.trade_flow_direction,
+                 jurisdiction=jurisdiction,
                  source_url=event.source_url)
 
     # Post-scoring enrichment (M4) — best-effort; runs OUTSIDE the
@@ -568,6 +603,15 @@ def score_event(event_id: UUID, *, retry_errors: bool = False) -> dict:
     except Exception as exc:  # noqa: BLE001 — last-resort guard
         log.exception("entity_index_sync_unexpected_error",
                       error=str(exc), error_type=type(exc).__name__)
+
+    # M5 — dispatch matching against user subscriptions (best-effort).
+    # Fire-and-forget: a failure here never blocks M4 scoring.
+    try:
+        from app.celery_app import match_change_event
+        match_change_event.delay(str(event_id))
+    except Exception as exc:  # noqa: BLE001
+        log.warning("m5_match_dispatch_failed",
+                    error=str(exc), error_type=type(exc).__name__)
 
     return {
         "status": "scored",
