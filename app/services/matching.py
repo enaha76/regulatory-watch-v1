@@ -29,12 +29,37 @@ import re
 from typing import Optional
 from uuid import UUID
 
+from sqlalchemy.exc import DBAPIError
 from sqlmodel import Session, text
 
 from app.database import engine
 from app.logging_setup import get_logger
 
 log = get_logger(__name__)
+
+
+# ── Query validation ─────────────────────────────────────────────────────────
+# `keyword_query` is stored as a raw PostgreSQL tsquery string. Without
+# validation at subscription-creation time a single malformed input
+# (dangling `&`, mismatched parens, …) would throw a syntax error inside
+# the matching query at runtime — aborting alert delivery for EVERY user
+# on that event, not just the user whose subscription was bad.
+#
+# We validate by trial-compiling against a fresh connection (isolated
+# from the request session so the error never contaminates an open
+# transaction).
+def validate_keyword_query(q: str) -> None:
+    """Raise ``ValueError`` if ``q`` is not a parseable tsquery."""
+    if not q or not q.strip():
+        return
+    try:
+        with engine.connect() as conn:
+            conn.execute(
+                text("SELECT to_tsquery('english', :q)"),
+                {"q": q},
+            )
+    except DBAPIError as exc:
+        raise ValueError("Invalid keyword_query syntax") from exc
 
 
 # ── The core matching query ──────────────────────────────────────────────────
@@ -51,11 +76,21 @@ log = get_logger(__name__)
 #
 # NULL in any subscription column means "match any".
 _MATCH_SQL = text("""
+    -- Compute the document tsvector ONCE in a CTE. Without this, PG
+    -- evaluates `to_tsvector('english', :raw_text)` per candidate
+    -- subscription row — a 500KB document × 1,000 subscriptions =
+    -- 1,000 redundant tokenizations (tens of seconds). The CROSS JOIN
+    -- with the single-row CTE inlines the precomputed tsvector into
+    -- the filter.
+    WITH doc AS (
+        SELECT to_tsvector('english', :raw_text) AS tv
+    )
     SELECT
         us.id            AS subscription_id,
         us.user_email,
         us.keyword_query
     FROM user_subscriptions us
+    CROSS JOIN doc
     WHERE us.is_active = TRUE
       -- Stage 1: structured metadata pre-filters
       AND (us.topics IS NULL
@@ -67,13 +102,16 @@ _MATCH_SQL = text("""
            OR :has_dests = FALSE
            OR us.destination_countries && CAST(STRING_TO_ARRAY(:event_dests_csv, ',') AS varchar[]))
       AND (:event_score >= us.min_significance)
-      -- Stage 2: full-text keyword percolation
+      -- Stage 2: full-text keyword percolation (tsvector reused from CTE)
       AND (us.keyword_query IS NULL
-           OR to_tsvector('english', :raw_text)
-              @@ to_tsquery('english', us.keyword_query))
+           OR doc.tv @@ to_tsquery('english', us.keyword_query))
 """)
 
-# Insert an alert row; silently skip if the (sub, event) pair already exists.
+# Insert an alert row; silently skip if the (sub, event) pair already
+# exists. The RETURNING clause yields the new id on a real INSERT and
+# an empty row set on conflict — so the caller can enqueue delivery
+# tasks only for alerts that were actually created (not duplicates from
+# a retry).
 _INSERT_ALERT_SQL = text("""
     INSERT INTO alerts (id, subscription_id, change_event_id,
                         matched_keywords, status)
@@ -81,6 +119,7 @@ _INSERT_ALERT_SQL = text("""
             :matched_kw, 'unread')
     ON CONFLICT ON CONSTRAINT uq_alerts_subscription_event
     DO NOTHING
+    RETURNING id
 """)
 
 
@@ -183,31 +222,50 @@ def match_event(event_id: UUID) -> dict:
             }
 
         # ── Insert alert rows ────────────────────────────────────────
-        alerts_created = 0
+        # Collect the ids of alerts genuinely created on THIS call
+        # (ON CONFLICT duplicates return no row) so we enqueue delivery
+        # exactly once per alert even if the matching task is retried.
+        new_alert_ids: list[str] = []
         for row in rows:
             matched = _extract_matched_terms(row.keyword_query, raw_text)
 
-            session.exec(
+            inserted = session.exec(
                 _INSERT_ALERT_SQL,
                 params={
                     "sub_id": row.subscription_id,
                     "event_id": event_id,
                     "matched_kw": json.dumps(matched) if matched else None,
                 },
-            )
-            alerts_created += 1
+            ).first()
+            if inserted is not None:
+                new_alert_ids.append(str(inserted[0]))
 
         session.commit()
 
-        log.info("match_event_done",
-                 event_id=str(event_id),
-                 candidates=len(rows),
-                 alerts_created=alerts_created,
-                 score=event_score,
-                 topic=event_topic)
+    # ── Enqueue delivery AFTER commit ────────────────────────────────
+    # Alerts are durable now; workers can safely load them. A Redis
+    # outage here never loses data — alerts remain queryable and the
+    # partial index `idx_alerts_pending_delivery` surfaces them for a
+    # future retry sweeper.
+    if new_alert_ids:
+        try:
+            from app.celery_app import deliver_alert  # local: circular import
+            for aid in new_alert_ids:
+                deliver_alert.delay(aid)
+        except Exception as enqueue_exc:  # noqa: BLE001
+            log.warning("delivery_enqueue_failed",
+                        error=str(enqueue_exc),
+                        count=len(new_alert_ids))
 
-        return {
-            "status": "matched",
-            "event_id": str(event_id),
-            "alerts_created": alerts_created,
-        }
+    log.info("match_event_done",
+             event_id=str(event_id),
+             candidates=len(rows),
+             alerts_created=len(new_alert_ids),
+             score=event_score,
+             topic=event_topic)
+
+    return {
+        "status": "matched",
+        "event_id": str(event_id),
+        "alerts_created": len(new_alert_ids),
+    }

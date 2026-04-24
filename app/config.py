@@ -90,8 +90,22 @@ class Settings(BaseSettings):
     # Min significance_score to trigger M4 obligation extraction.
     # 0.6 = "substantive" or higher per the L3 rubric.
     OBLIGATIONS_SCORE_GATE: float = Field(default=0.6, ge=0.0, le=1.0)
-    # Max chars of doc content fed to the obligation extractor.
+    # Max chars per *chunk* fed to the obligation extractor. A long
+    # document is split into paragraph-aware chunks, each ≤ this size;
+    # the LLM is called once per chunk and results are deduplicated.
+    # (Previously this was a hard truncation boundary that silently
+    # dropped obligations from the second half of long regulations.)
     LLM_OBLIGATIONS_MAX_CONTENT: int = Field(default=6000, ge=500)
+    # Overlap (in chars) applied when a single paragraph exceeds the
+    # chunk budget and has to be split with a sliding window. Preserves
+    # cross-boundary context (e.g. an actor introduced at the start of
+    # a long paragraph still appears in the next slice).
+    LLM_OBLIGATIONS_CHUNK_OVERLAP: int = Field(default=400, ge=0)
+    # Hard cap on chunks per event — bounds worst-case cost. A 500-page
+    # PDF at 6K/chunk + 400 overlap = ~500K chars → ~85 chunks; the
+    # cap kicks in well before then. Over-cap chunks are dropped with
+    # a warning log so it's visible in operations.
+    LLM_OBLIGATIONS_MAX_CHUNKS: int = Field(default=15, ge=1, le=100)
 
     # ── Celery resilience ─────────────────────────────────
     # Hard caps on task-level retries — prevents a permanently-broken
@@ -132,10 +146,60 @@ class Settings(BaseSettings):
     IMAP_PASSWORD: str = ""
     IMAP_MAILBOX: str = "INBOX"
 
+    # ── Alert delivery (M5b) ──────────────────────────────
+    # Global kill switch. When False the Celery deliver_alert task is a
+    # no-op that marks alerts as skipped. Lets you stage M5 safely:
+    # run matching in prod, verify alert rows look right, then flip on.
+    ALERT_DELIVERY_ENABLED: bool = False
+    # SMTP outbound for email alerts. Works with any relay
+    # (SendGrid, Postmark, Mailgun, SES, self-hosted Postfix) because
+    # stdlib `smtplib` is the only client.
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = Field(default=587, ge=1, le=65535)
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = "alerts@regwatch.local"
+    SMTP_FROM_NAME: str = "Regulatory Watch"
+    SMTP_USE_TLS: bool = True  # STARTTLS on port 587 (typical)
+    SMTP_TIMEOUT_SECONDS: int = Field(default=15, ge=1)
+    # Retry policy for a delivery attempt.
+    DELIVER_ALERT_MAX_RETRIES: int = Field(default=5, ge=0, le=20)
+    # Public URL of this deployment — embedded in alert emails as
+    # "open in inbox" / "mark as read" links. No trailing slash.
+    PUBLIC_BASE_URL: str = "http://localhost:8001"
+
     # ── Ingestion HTTP (optional) ─────────────────────────
     # Comma-separated host suffixes for which PDF/XML/robots httpx calls skip
     # TLS verification (e.g. "dof.gob.mx" when the site sends a broken chain).
     INGEST_TLS_SKIP_VERIFY_HOST_SUFFIXES: str = ""
+
+    # ── Pre-ingest content filter ─────────────────────────
+    # Drops non-regulatory pages (careers, events, about) BEFORE they
+    # become RawDocuments. Universal multilingual heuristic — no
+    # per-domain config needed. See app.services.content_filter.
+    CONTENT_FILTER_ENABLED: bool = True
+    # Below this word count, a page is almost certainly a landing /
+    # nav page and is dropped regardless of keywords.
+    CONTENT_FILTER_MIN_WORDS: int = Field(default=300, ge=50)
+    # Absolute minimum regulatory-keyword hits; below this, drop.
+    # Raising this catches more noise but risks false negatives on
+    # short-but-real regulations.
+    CONTENT_FILTER_MIN_KEYWORD_HITS: int = Field(default=3, ge=1)
+    # Keywords-per-word-count ratio. 3/1000 is the empirical floor
+    # for real regulations across the rubric languages.
+    CONTENT_FILTER_MIN_DENSITY: float = Field(default=0.003, ge=0.0)
+
+    # ── Federal Register API ─────────────────────────────
+    # Public JSON API; no key required. Docs:
+    #   https://www.federalregister.gov/developers/api/v1
+    FEDERAL_REGISTER_API_BASE: str = "https://www.federalregister.gov/api/v1"
+    # How far back to look on each poll. 2 days covers a daily cadence
+    # with a buffer for late-published documents.
+    FEDERAL_REGISTER_DAYS_BACK: int = Field(default=2, ge=1, le=30)
+    # Max documents per poll (API cap is 1000; default keeps costs sane).
+    FEDERAL_REGISTER_MAX_DOCS: int = Field(default=200, ge=1, le=1000)
+    # Politeness between body fetches after the index call.
+    FEDERAL_REGISTER_RATE_LIMIT_RPS: float = Field(default=2.0, gt=0)
 
     # ── Logging ───────────────────────────────────────────
     # 'json' (production / log aggregation) | 'console' (human-readable dev)

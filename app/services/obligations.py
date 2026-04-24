@@ -2,8 +2,8 @@
 Structured obligation extraction (M4 phase 3).
 
 For ChangeEvents the L3 scorer has flagged as substantive or critical
-(`significance_score >= 0.6`), this service makes a second, cheaper LLM
-call to pull out discrete, machine-readable obligations:
+(`significance_score >= 0.6`), this service extracts discrete,
+machine-readable obligations:
 
     (actor, action, condition, deadline, penalty, obligation_type)
 
@@ -21,15 +21,33 @@ Design
 * **Gated on score ≥ 0.6.** typo/cosmetic/minor events produce zero
   obligations, so we don't pay the LLM cost. This is the single
   biggest knob on marginal cost.
-* **Idempotent.** `change_events.obligations_extracted_at` is set on
-  every attempt (even when zero obligations are produced), so a re-run
-  is a no-op unless the caller passes `force=True`.
-* **Fail-soft.** HTTP / parse errors are logged and the `extracted_at`
-  marker is NOT set, so the next scheduler pass will retry.
+
+* **Chunked extraction.** Long documents are split into paragraph-
+  aware chunks (each ≤ ``LLM_OBLIGATIONS_MAX_CONTENT`` chars) and the
+  LLM is called once per chunk. Results are deduplicated on normalized
+  ``(actor, action, obligation_type)``. This replaces the previous
+  "truncate to 6K chars" behaviour which silently dropped obligations
+  from the second half of long regulations.
+
+* **Chunk cap.** ``LLM_OBLIGATIONS_MAX_CHUNKS`` bounds the worst-case
+  cost per event. Over-cap chunks are dropped with a warning log.
+
+* **Idempotent.** ``change_events.obligations_extracted_at`` is set on
+  every successful attempt (even when zero obligations are produced).
+  Re-runs are a no-op unless the caller passes ``force=True``.
+
+* **Fail modes.**
+    - HTTP error on any chunk → bail the whole event, return
+      ``http_error``; the Celery task retries. Partial obligations
+      are never persisted.
+    - Parse error on one chunk → log and skip *that chunk only*;
+      continue with the others. Prevents a single malformed LLM
+      response from losing the whole event's obligations.
+
 * **Deadline parsing** is best-effort. We accept ISO-8601-ish dates
   ("2026-06-30") and a small set of obvious natural-language forms
-  ("30 June 2026", "June 30, 2026"). Anything else → `deadline_date
-  = NULL`, `deadline_text` preserves the exact wording.
+  ("30 June 2026", "June 30, 2026"). Anything else →
+  ``deadline_date = NULL``, ``deadline_text`` preserves the exact wording.
 
 Public API
 ----------
@@ -89,6 +107,12 @@ class ObligationItem(BaseModel):
     deadline_text: Optional[str] = Field(default=None, max_length=255)
     penalty: Optional[str] = Field(default=None, max_length=2000)
     obligation_type: str = Field(default="other")
+    # M5c — verbatim quote from the chunk that establishes this
+    # obligation. Located in the full source_text downstream to
+    # compute char offsets for in-document highlighting. None when
+    # the LLM couldn't cite a specific sentence (in which case the
+    # prompt asks it to drop the obligation entirely).
+    source_quote: Optional[str] = Field(default=None, max_length=2000)
 
     @field_validator("obligation_type")
     @classmethod
@@ -125,7 +149,15 @@ Respond with a single JSON object:
         - "disclosure"    — publish / inform / disclose (public or counterparty)
         - "registration"  — register / license / notify an authority
         - "penalty"       — payment of fine / fee / sanction
-        - "other"
+        - "other",
+      "source_quote":    verbatim text from THIS chunk that establishes
+                         this obligation. Copy exactly — preserve
+                         punctuation, capitalization, numbers, quotes.
+                         Do NOT paraphrase. Do NOT merge sentences.
+                         Typically 1–3 sentences, max ~500 chars.
+                         If you cannot cite specific text for an
+                         obligation, DO NOT extract it at all (better
+                         to miss a real one than fabricate a citation).
     }
   ]
 }
@@ -139,10 +171,36 @@ Rules:
 - Prefer specific actors ("SIFI banks", "US importers of steel")
   over vague ones ("businesses", "entities") when the text allows.
 - Keep `action` in imperative form ("File a Form 8-K within 4 business days.").
+- When you receive a chunk of a larger document, extract only what is
+  clearly stated in THIS chunk. Do NOT speculate about content in
+  other chunks or invent cross-references you cannot see.
+- Every extracted obligation MUST have a verbatim source_quote from
+  this chunk. No quote → drop the obligation.
 """
 
 
-def _build_user_prompt(event: ChangeEvent, title: Optional[str], content: str) -> str:
+def _build_user_prompt(
+    event: ChangeEvent,
+    title: Optional[str],
+    content: str,
+    *,
+    chunk_index: int = 0,
+    total_chunks: int = 1,
+) -> str:
+    """Build the per-call user prompt.
+
+    When ``total_chunks > 1`` the header tells the LLM it's seeing a
+    chunk of a larger document so it doesn't invent cross-references
+    or assume the chunk represents the whole regulation.
+    """
+    if total_chunks > 1:
+        chunk_hint = (
+            f"Document content — chunk {chunk_index + 1} of {total_chunks}. "
+            "Extract only obligations clearly stated in THIS chunk."
+        )
+    else:
+        chunk_hint = "Document content (what to extract obligations from):"
+
     parts = [
         f"Source URL: {event.source_url}",
         f"Title: {title or '-'}",
@@ -153,10 +211,126 @@ def _build_user_prompt(event: ChangeEvent, title: Optional[str], content: str) -
         f"Topic: {event.topic or '-'}",
         f"LLM compliance summary: {event.summary or '-'}",
         "",
-        "Document content (what to extract obligations from):",
+        chunk_hint,
         content,
     ]
     return "\n".join(parts)
+
+
+# ── Chunking ─────────────────────────────────────────────────────────────────
+
+_PARAGRAPH_SPLIT_RE = re.compile(r"\n\s*\n+")
+
+
+def _fixed_chunks(text: str, chunk_size: int, overlap: int) -> list[str]:
+    """Sliding-window fallback for text without paragraph breaks or for
+    a single paragraph that exceeds the chunk budget."""
+    if chunk_size <= 0:
+        return [text] if text else []
+    stride = chunk_size - overlap
+    if stride <= 0:
+        stride = chunk_size  # nonsensical overlap → behave as non-overlapping
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        out.append(text[i : i + chunk_size])
+        i += stride
+    return out
+
+
+def _chunk_text(text: str, *, chunk_size: int, overlap: int) -> list[str]:
+    """
+    Paragraph-aware chunker with sliding-window fallback.
+
+    Algorithm:
+      1. If the full text already fits, return ``[text]``.
+      2. Split on blank lines. If there are no paragraph boundaries,
+         fall through to fixed-size chunks.
+      3. Pack paragraphs into chunks up to ``chunk_size``. When a chunk
+         is full, emit it and start a new one.
+      4. If a single paragraph exceeds ``chunk_size`` (rare; usually a
+         PDF that lost its linebreaks), fall back to ``_fixed_chunks``
+         for that paragraph only. Overlap is applied there so actor
+         and verb introduced at the start carry into the next slice.
+
+    Paragraph boundaries are natural cut points, so in the common case
+    we do NOT add overlap between chunks — it would waste LLM budget
+    re-processing text we already saw.
+    """
+    if not text:
+        return []
+    if len(text) <= chunk_size:
+        return [text]
+
+    paragraphs = [p.strip() for p in _PARAGRAPH_SPLIT_RE.split(text) if p.strip()]
+    if not paragraphs:
+        return _fixed_chunks(text, chunk_size, overlap)
+
+    chunks: list[str] = []
+    buf: list[str] = []
+    buf_len = 0
+
+    for para in paragraphs:
+        if len(para) > chunk_size:
+            # Flush whatever we've accumulated, then slice this
+            # oversized paragraph with overlap.
+            if buf:
+                chunks.append("\n\n".join(buf))
+                buf, buf_len = [], 0
+            chunks.extend(_fixed_chunks(para, chunk_size, overlap))
+            continue
+
+        # +2 accounts for the "\n\n" joiner when buf is non-empty.
+        sep_cost = 2 if buf else 0
+        if buf_len + sep_cost + len(para) > chunk_size:
+            chunks.append("\n\n".join(buf))
+            buf = [para]
+            buf_len = len(para)
+        else:
+            buf.append(para)
+            buf_len += sep_cost + len(para)
+
+    if buf:
+        chunks.append("\n\n".join(buf))
+
+    return chunks
+
+
+# ── Dedup ────────────────────────────────────────────────────────────────────
+
+_DEDUP_WS_RE = re.compile(r"\s+")
+
+
+def _normalize_for_dedup(s: Optional[str]) -> str:
+    """Collapse whitespace + lowercase — good-enough fuzzy-equal key."""
+    if not s:
+        return ""
+    return _DEDUP_WS_RE.sub(" ", s.strip().lower())
+
+
+def _dedupe_obligations(items: list[ObligationItem]) -> list[ObligationItem]:
+    """
+    Remove duplicates by normalized ``(actor, action, obligation_type)``.
+
+    When chunking, the same obligation can appear in two adjacent
+    chunks if the LLM restated it, or if fixed-size slicing duplicated
+    text within the overlap region. Keep the first occurrence; drop
+    subsequent ones.
+    """
+    seen: set[tuple[str, str, str]] = set()
+    out: list[ObligationItem] = []
+    for item in items:
+        key = (
+            _normalize_for_dedup(item.actor),
+            _normalize_for_dedup(item.action),
+            item.obligation_type,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
 
 
 # ── LLM call ─────────────────────────────────────────────────────────────────
@@ -263,11 +437,15 @@ def extract_obligations(event_id: UUID, *, force: bool = False) -> dict:
     Extract structured obligations for a single ChangeEvent.
 
     Gating:
-      - Skipped (`status=below_gate`) when significance_score < OBLIGATIONS_SCORE_GATE.
-      - Skipped (`status=already_extracted`) when already extracted and
-        `force=False`.
+      - Skipped (``status=below_gate``) when ``significance_score <
+        OBLIGATIONS_SCORE_GATE``.
+      - Skipped (``status=already_extracted``) when already extracted
+        and ``force=False``.
 
-    Return shape: {"status": str, "event_id": str, "obligations": int}.
+    Returns
+    -------
+    dict
+        ``{"status": str, "event_id": str, "obligations": int, ...telemetry...}``
     """
     settings = get_settings()
     log = logger.bind(event_id=str(event_id), service="obligations")
@@ -300,69 +478,120 @@ def extract_obligations(event_id: UUID, *, force: bool = False) -> dict:
             log.warning("missing_api_key")
             return {"status": "skipped_no_api_key", "event_id": str(event_id)}
 
+        # ── Load full text (no truncation — chunking handles size) ──
         title: Optional[str] = None
-        content: str = ""
-        max_content = settings.LLM_OBLIGATIONS_MAX_CONTENT
+        source_text = ""
         if event.new_version_id:
             sv = session.get(SourceVersion, event.new_version_id)
             if sv is not None:
                 title = sv.title
-                content = (sv.raw_text or "")[:max_content]
-        # For modified events, if we got the full text above, use it.
-        # Only fall back to diff if no full text is available at all.
-        # (Fix 3 — Contextless Diff: the diff alone lacks actor/section
-        # context needed for obligation extraction.)
-        if not content and event.unified_diff:
-            content = event.unified_diff[:max_content]
-        if not content and event.summary:
-            content = event.summary
-        if not content:
+                source_text = sv.raw_text or ""
+
+        # Fallbacks when the version's raw_text is unavailable. Both
+        # are small so chunking is a no-op for them.
+        if not source_text and event.unified_diff:
+            source_text = event.unified_diff
+        if not source_text and event.summary:
+            source_text = event.summary
+
+        if not source_text:
             event.obligations_extracted_at = datetime.now(timezone.utc)
             session.add(event)
             session.commit()
             log.info("empty_content_skipped")
             return {"status": "empty_content", "event_id": str(event_id)}
 
-        user_prompt = _build_user_prompt(event, title, content)
-
-        raw = ""
-        latency_ms = 0
-        request_hash = ""
-        try:
-            raw, latency_ms, request_hash = _call_llm(
-                _SYSTEM_PROMPT,
-                user_prompt,
-                model=settings.OPENAI_MODEL,
-                api_key=settings.OPENAI_API_KEY,
-                event_id=str(event_id),
+        # ── Chunk ────────────────────────────────────────────────────
+        chunks = _chunk_text(
+            source_text,
+            chunk_size=settings.LLM_OBLIGATIONS_MAX_CONTENT,
+            overlap=settings.LLM_OBLIGATIONS_CHUNK_OVERLAP,
+        )
+        n_chunks_produced = len(chunks)
+        if n_chunks_produced > settings.LLM_OBLIGATIONS_MAX_CHUNKS:
+            log.warning(
+                "obligations_chunk_cap_hit",
+                produced=n_chunks_produced,
+                cap=settings.LLM_OBLIGATIONS_MAX_CHUNKS,
+                full_chars=len(source_text),
+                source_url=event.source_url,
             )
-        except httpx.HTTPError as exc:
-            log.warning("llm_http_error",
-                        error_type=exc.__class__.__name__,
-                        error=str(exc)[:300],
-                        model=settings.OPENAI_MODEL,
-                        source_url=event.source_url)
-            return {"status": "http_error", "event_id": str(event_id),
-                    "error": str(exc)}
+            chunks = chunks[: settings.LLM_OBLIGATIONS_MAX_CHUNKS]
 
-        try:
-            data = json.loads(raw)
-            parsed = ObligationOutput(**data)
-        except (json.JSONDecodeError, ValidationError) as exc:
-            event.obligations_extracted_at = datetime.now(timezone.utc)
-            session.add(event)
-            session.commit()
-            log.warning("llm_parse_error",
-                        error_type=exc.__class__.__name__,
-                        error=str(exc)[:300],
-                        model=settings.OPENAI_MODEL,
-                        request_hash=request_hash,
-                        latency_ms=latency_ms,
-                        raw_response=_truncate_for_log(
-                            raw, settings.LLM_ERROR_LOG_RESPONSE_CHARS),
-                        source_url=event.source_url)
-            return {"status": "parse_error", "event_id": str(event_id),
-                    "error": str(exc)}
+        # ── Extract per chunk ────────────────────────────────────────
+        all_items: list[ObligationItem] = []
+        total_latency = 0
+        parse_errors = 0
+        last_request_hash: Optional[str] = None
+
+        for i, chunk in enumerate(chunks):
+            user_prompt = _build_user_prompt(
+                event, title, chunk,
+                chunk_index=i, total_chunks=len(chunks),
+            )
+            try:
+                raw, latency_ms, request_hash = _call_llm(
+                    _SYSTEM_PROMPT,
+                    user_prompt,
+                    model=settings.OPENAI_MODEL,
+                    api_key=settings.OPENAI_API_KEY,
+                    event_id=str(event_id),
+                )
+                total_latency += latency_ms
+                last_request_hash = request_hash
+            except httpx.HTTPError as exc:
+                # Abort the whole event on HTTP failure — partial
+                # obligations would leave the caller thinking the
+                # event is "done" when it isn't. Task-level retry will
+                # re-enter here and redo all chunks.
+                log.warning(
+                    "llm_http_error",
+                    error_type=exc.__class__.__name__,
+                    error=str(exc)[:300],
+                    model=settings.OPENAI_MODEL,
+                    chunk_index=i,
+                    total_chunks=len(chunks),
+                    source_url=event.source_url,
+                )
+                return {
+                    "status": "http_error",
+                    "event_id": str(event_id),
+                    "error": str(exc),
+                    "chunk_index": i,
+                }
+
+            try:
+                data = json.loads(raw)
+                parsed = ObligationOutput(**data)
+                all_items.extend(parsed.obligations)
+            except (json.JSONDecodeError, ValidationError) as exc:
+                # Skip this chunk; the others may still be usable.
+                parse_errors += 1
+                log.warning(
+                    "llm_parse_error_in_chunk",
+                    error_type=exc.__class__.__name__,
+                    error=str(exc)[:300],
+                    model=settings.OPENAI_MODEL,
+                    request_hash=request_hash,
+                    latency_ms=latency_ms,
+                    chunk_index=i,
+                    total_chunks=len(chunks),
+                    raw_response=_truncate_for_log(
+                        raw, settings.LLM_ERROR_LOG_RESPONSE_CHARS),
+                    source_url=event.source_url,
+                )
+                continue
+
+        # ── Dedup ────────────────────────────────────────────────────
+        deduped = _dedupe_obligations(all_items)
+        duplicates_removed = len(all_items) - len(deduped)
+
+        # ── Persist ──────────────────────────────────────────────────
+        # Locate each obligation's source_quote in the full source text
+        # to compute char-offset spans for in-document highlighting.
+        # Searching the full source (rather than per-chunk) is simpler
+        # and still cheap: a few str.find calls over ~100KB text.
+        from app.services.citations import locate_quote
 
         now = datetime.now(timezone.utc)
         if force:
@@ -374,7 +603,17 @@ def extract_obligations(event_id: UUID, *, force: bool = False) -> dict:
             session.flush()
 
         created = 0
-        for item in parsed.obligations:
+        spans_located = 0
+        for item in deduped:
+            quote_clean = (item.source_quote or "").strip() or None
+            span_start: Optional[int] = None
+            span_end: Optional[int] = None
+            if quote_clean and source_text:
+                span = locate_quote(source_text, quote_clean)
+                if span is not None:
+                    span_start, span_end = span
+                    spans_located += 1
+
             obl = Obligation(
                 change_event_id=event_id,
                 actor=item.actor[:255],
@@ -386,31 +625,46 @@ def extract_obligations(event_id: UUID, *, force: bool = False) -> dict:
                 obligation_type=item.obligation_type,
                 llm_model=settings.OPENAI_MODEL,
                 extracted_at=now,
+                source_quote=quote_clean,
+                source_span_start=span_start,
+                source_span_end=span_end,
             )
             session.add(obl)
             created += 1
 
         event.obligations_extracted_at = now
         session.add(event)
-        # Capture values before commit closes the session to avoid
-        # DetachedInstanceError on access post-commit.
         score_snapshot = event.significance_score or 0.0
         source_url = event.source_url
         session.commit()
 
     status = "extracted" if created > 0 else "no_obligations"
-    log.info("done",
-             status=status,
-             obligations_created=created,
-             score=round(score_snapshot, 3),
-             model=settings.OPENAI_MODEL,
-             latency_ms=latency_ms,
-             request_hash=request_hash,
-             source_url=source_url)
+    log.info(
+        "done",
+        status=status,
+        obligations_created=created,
+        chunks_processed=len(chunks),
+        chunks_produced=n_chunks_produced,
+        raw_obligations=len(all_items),
+        duplicates_removed=duplicates_removed,
+        parse_errors=parse_errors,
+        spans_located=spans_located,
+        total_latency_ms=total_latency,
+        score=round(score_snapshot, 3),
+        model=settings.OPENAI_MODEL,
+        request_hash=last_request_hash,
+        source_url=source_url,
+    )
     return {
         "status": status,
         "event_id": str(event_id),
         "obligations": created,
+        "chunks_processed": len(chunks),
+        "chunks_produced": n_chunks_produced,
+        "raw_obligations": len(all_items),
+        "duplicates_removed": duplicates_removed,
+        "parse_errors": parse_errors,
+        "spans_located": spans_located,
     }
 
 

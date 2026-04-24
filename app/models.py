@@ -8,7 +8,7 @@ from sqlmodel import SQLModel, Field, Relationship, Column
 from sqlalchemy import JSON, Text, String, CheckConstraint, UniqueConstraint, Date, ARRAY
 from typing import Optional
 from uuid import UUID, uuid4
-from datetime import datetime, date, timezone
+from datetime import date, datetime, timezone
 
 
 def utcnow() -> datetime:
@@ -328,6 +328,20 @@ class ChangeEvent(SQLModel, table=True):
         default=None, max_length=12,
     )
 
+    # ── M5c: Explainability / XAI (migration 014) ─────────────────────
+    # `trigger_quote` — verbatim LLM-cited sentence that best demonstrates
+    #     why this change matters. Shown to users as "here's what
+    #     changed."
+    # `trigger_span_start` / `_end` — char offsets into the NEW source
+    #     version's raw_text for in-document highlighting. NULL when
+    #     the quote couldn't be located (LLM paraphrased / too short /
+    #     pure-cosmetic change with no meaningful citation).
+    # Both span columns must be set together or both NULL — enforced
+    # by ck_change_events_trigger_span_paired.
+    trigger_quote: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    trigger_span_start: Optional[int] = Field(default=None)
+    trigger_span_end: Optional[int] = Field(default=None)
+
     detected_at: datetime = Field(default_factory=utcnow, index=True)
 
 
@@ -405,6 +419,18 @@ class Obligation(SQLModel, table=True):
     llm_model: Optional[str] = Field(default=None, max_length=50)
     extracted_at: datetime = Field(default_factory=utcnow)
 
+    # ── M5c: Explainability / XAI (migration 014) ─────────────────────
+    # `source_quote` — verbatim LLM-cited text from the document chunk
+    #     that establishes THIS obligation. Shown to users as "here's
+    #     what the regulation actually says."
+    # `source_span_start` / `_end` — char offsets into the source
+    #     version's raw_text at extraction time. NULL when the quote
+    #     couldn't be located (LLM paraphrased or the text was in
+    #     an overflowed chunk).
+    source_quote: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    source_span_start: Optional[int] = Field(default=None)
+    source_span_end: Optional[int] = Field(default=None)
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # UserSubscription — M5: user alerting profiles
@@ -450,9 +476,21 @@ class UserSubscription(SQLModel, table=True):
     #   "ECCN & 3A090"               → exact code match
     #   "tariff | customs"           → tariff OR customs
     # NULL means "skip keyword check — only use metadata filters".
+    # Validated at POST/PATCH (see app.services.matching.validate_keyword_query).
     keyword_query: Optional[str] = Field(
         default=None, sa_column=Column(Text, nullable=True),
     )
+
+    # ── Delivery channel (M5b) ───────────────────────────────────────
+    # How matched alerts are delivered to the user.
+    #   "email"   — SMTP to user_email (or channel_target if set)
+    #   "slack"   — POST to channel_target (incoming webhook URL)
+    #   "webhook" — POST to channel_target (generic JSON)
+    #   "none"    — inbox-only (GET /api/alerts), no push delivery
+    channel: str = Field(default="email", max_length=20)
+    # Optional per-channel override. For email: deliver to a different
+    # address than user_email. For slack/webhook: the target URL.
+    channel_target: Optional[str] = Field(default=None, max_length=512)
 
     is_active: bool = Field(default=True, index=True)
     created_at: datetime = Field(default_factory=utcnow)
@@ -491,5 +529,68 @@ class Alert(SQLModel, table=True):
         default=None, sa_column=Column(JSON, nullable=True),
     )
 
+    # Inbox visibility — did the user open it? Dismiss from inbox?
+    # Orthogonal to `workflow_status` below (resolution state).
     status: str = Field(default="unread", max_length=20)
+
+    # ── Delivery tracking (M5b) ───────────────────────────────────────
+    # `delivered_at` is set when the notifier reports success.
+    # `delivery_error` stores the last failure reason (truncated).
+    # `delivery_attempts` counts tries so the Celery retry policy can
+    # back off and eventually dead-letter.
+    delivered_at: Optional[datetime] = Field(default=None)
+    delivery_error: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    delivery_attempts: int = Field(default=0)
+
+    # ── Workflow (M5d — migration 015) ────────────────────────────────
+    # Resolution state: does the team still owe work on this alert?
+    # open         — not yet picked up
+    # in_progress  — someone is working on it
+    # done         — resolved (requires resolution_note + closed_at)
+    # waived       — intentionally not acted on (requires resolution_note)
+    # Terminal: done, waived. State-machine transitions enforced by
+    # app.services.alert_workflow.
+    workflow_status: str = Field(default="open", max_length=20)
+    assigned_to: Optional[str] = Field(default=None, max_length=255)
+    assigned_by: Optional[str] = Field(default=None, max_length=255)
+    assigned_at: Optional[datetime] = Field(default=None)
+    due_date: Optional[date] = Field(default=None, sa_column=Column(Date, nullable=True))
+    # Required at transition time when moving to a terminal status.
+    # Preserved verbatim as the audit record for "why we closed this."
+    resolution_note: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    closed_at: Optional[datetime] = Field(default=None)
+
     created_at: datetime = Field(default_factory=utcnow)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# AlertComment — threaded discussion per alert (M5d)
+# ═════════════════════════════════════════════════════════════════════════════
+class AlertComment(SQLModel, table=True):
+    __tablename__ = "alert_comments"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    alert_id: UUID = Field(foreign_key="alerts.id", index=True)
+    author_email: str = Field(max_length=255)
+    body: str = Field(sa_column=Column(Text, nullable=False))
+    created_at: datetime = Field(default_factory=utcnow, index=True)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# AlertActivity — audit trail of workflow actions (M5d)
+# ═════════════════════════════════════════════════════════════════════════════
+# Every mutation through the workflow service writes one row here:
+# assign/unassign, status_changed, commented, due_date_changed, etc.
+# `details` is free-form JSON so new action types can add new fields
+# without a migration.
+class AlertActivity(SQLModel, table=True):
+    __tablename__ = "alert_activity"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    alert_id: UUID = Field(foreign_key="alerts.id", index=True)
+    actor_email: str = Field(max_length=255)
+    action: str = Field(max_length=30)
+    details: Optional[dict] = Field(
+        default=None, sa_column=Column(JSON, nullable=True),
+    )
+    created_at: datetime = Field(default_factory=utcnow, index=True)

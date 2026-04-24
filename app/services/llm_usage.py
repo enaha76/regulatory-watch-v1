@@ -47,6 +47,27 @@ log = get_logger(__name__)
 _WRITE_LOCK = Lock()
 
 
+# ── Per-model pricing ────────────────────────────────────────────────────────
+# USD per 1M tokens, (input, output). Keep this in sync with OpenAI's
+# public list price. If OPENAI_MODEL is changed without updating this
+# map, costs are computed from the flat LLM_PRICE_INPUT/OUTPUT settings
+# as a fallback — which will drift silently from real billing. The map
+# exists so a model swap updates costs automatically.
+_MODEL_PRICING: dict[str, tuple[float, float]] = {
+    # GPT-4o family
+    "gpt-4o-mini":        (0.15, 0.60),
+    "gpt-4o":             (2.50, 10.00),
+    # GPT-4.1 family
+    "gpt-4.1":            (2.00, 8.00),
+    "gpt-4.1-mini":       (0.40, 1.60),
+    "gpt-4.1-nano":       (0.10, 0.40),
+    # o-series (reasoning) — list price at time of writing
+    "o1-mini":            (3.00, 12.00),
+    "o1":                 (15.00, 60.00),
+    "o3-mini":            (1.10, 4.40),
+}
+
+
 def _ledger_path() -> Optional[Path]:
     raw = (get_settings().LLM_USAGE_LEDGER_PATH or "").strip()
     if not raw:
@@ -62,11 +83,24 @@ def _ledger_path() -> Optional[Path]:
     return p
 
 
-def compute_cost_usd(prompt_tokens: int, completion_tokens: int) -> tuple[float, float, float]:
-    """Return (input_cost, output_cost, total_cost) in USD."""
-    s = get_settings()
-    in_cost = (prompt_tokens / 1_000_000.0) * s.LLM_PRICE_INPUT_USD_PER_1M
-    out_cost = (completion_tokens / 1_000_000.0) * s.LLM_PRICE_OUTPUT_USD_PER_1M
+def compute_cost_usd(
+    prompt_tokens: int,
+    completion_tokens: int,
+    model: Optional[str] = None,
+) -> tuple[float, float, float]:
+    """Return (input_cost, output_cost, total_cost) in USD.
+
+    Uses the per-model price map when the model is known; falls back to
+    the flat ``LLM_PRICE_INPUT/OUTPUT_USD_PER_1M`` settings otherwise.
+    """
+    if model and model in _MODEL_PRICING:
+        in_price, out_price = _MODEL_PRICING[model]
+    else:
+        s = get_settings()
+        in_price = s.LLM_PRICE_INPUT_USD_PER_1M
+        out_price = s.LLM_PRICE_OUTPUT_USD_PER_1M
+    in_cost = (prompt_tokens / 1_000_000.0) * in_price
+    out_cost = (completion_tokens / 1_000_000.0) * out_price
     return in_cost, out_cost, in_cost + out_cost
 
 
@@ -99,7 +133,9 @@ def record(
         log.warning("llm_usage_malformed", scope=scope, request_hash=request_hash, usage=str(usage)[:200])
         prompt_tokens = completion_tokens = total_tokens = 0
 
-    in_cost, out_cost, total_cost = compute_cost_usd(prompt_tokens, completion_tokens)
+    in_cost, out_cost, total_cost = compute_cost_usd(
+        prompt_tokens, completion_tokens, model=model,
+    )
 
     rec = {
         "ts": datetime.now(timezone.utc).isoformat(),

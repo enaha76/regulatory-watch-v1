@@ -87,16 +87,26 @@ celery.conf.beat_schedule = {
             "rate_limit_rps": 0.5,
         },
     },
-    "web-crawl-federal-register-every-6h": {
-        "task": "app.celery_app.web_crawl_task",
+    # ── Federal Register: use the public JSON API, not BFS crawling ──
+    # The API returns only published RULES / PROPOSED_RULES /
+    # PRESIDENTIAL_DOCUMENTS — no careers, no events, no "about"
+    # pages. See app.ingestion.federal_register_api for details.
+    # The old BFS crawler below is kept commented as a fallback in
+    # case the API ever becomes unavailable; re-enable by swapping.
+    "federal-register-api-every-6h": {
+        "task": "app.celery_app.federal_register_api_task",
         "schedule": 21600.0,
-        "kwargs": {
-            "seed_urls": ["https://www.federalregister.gov/documents/current"],
-            "allowed_domain": "www.federalregister.gov",
-            "max_pages": 50,
-            "rate_limit_rps": 0.5,
-        },
     },
+    # "web-crawl-federal-register-every-6h": {
+    #     "task": "app.celery_app.web_crawl_task",
+    #     "schedule": 21600.0,
+    #     "kwargs": {
+    #         "seed_urls": ["https://www.federalregister.gov/documents/current"],
+    #         "allowed_domain": "www.federalregister.gov",
+    #         "max_pages": 50,
+    #         "rate_limit_rps": 0.5,
+    #     },
+    # },
     # T2.5 / T2.10 — XMLConnector daily schedule (representative source).
     "xml-uslm-usc-title5-daily": {
         "task": "app.celery_app.xml_ingest_task",
@@ -203,6 +213,46 @@ def xml_ingest_task(self, source: str, title: str = ""):
         raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
 
 
+@celery.task(
+    name="app.celery_app.federal_register_api_task",
+    bind=True, max_retries=3,
+)
+def federal_register_api_task(
+    self,
+    days_back: int | None = None,
+    max_documents: int | None = None,
+):
+    """Structured-feed ingestion from the US Federal Register JSON API.
+
+    Replaces BFS crawling of ``federalregister.gov`` with direct API
+    queries. Only returns published regulatory documents — zero
+    "about", "events", or "careers" noise.
+    """
+    import asyncio
+
+    from app.ingestion.federal_register_api import FederalRegisterAPIConnector
+    from app.ingestion.storage import upsert_documents
+
+    log = logger.bind(task="federal_register_api")
+    log.info("starting", days_back=days_back, max_documents=max_documents)
+    try:
+        connector = FederalRegisterAPIConnector(
+            days_back=days_back,
+            max_documents=max_documents,
+        )
+        docs = asyncio.run(connector.fetch())
+        stats = upsert_documents(docs)
+        log.info("done",
+                 fetched=len(docs),
+                 inserted=stats.get("inserted"),
+                 filtered=stats.get("filtered"),
+                 filter_reasons=stats.get("filter_reasons"))
+        return {"fetched": len(docs), **stats}
+    except Exception as exc:  # noqa: BLE001
+        log.error("failed", error=str(exc), error_type=type(exc).__name__)
+        raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
+
+
 @celery.task(name="app.celery_app.email_ingest_task", bind=True, max_retries=3)
 def email_ingest_task(self):
     """T2.6 — Poll IMAP mailbox for new regulatory emails."""
@@ -279,7 +329,9 @@ def score_change_event(self, event_id: str, retry_errors: bool = False):
         # parse_error / validation_error → dead letter; do not retry.
         log.warning("dead_letter", error=err)
     elif result.get("status") == "scored":
-        circuit_breaker.record_success("openai:scoring")
+        # Successes do NOT clear breaker state — failures age out of the
+        # sliding window on their own. See circuit_breaker.record_success
+        # docstring for why auto-reset breaks the count.
         score = result.get("score") or 0.0
         if score >= settings.OBLIGATIONS_SCORE_GATE:
             extract_obligations_task.delay(event_id)
@@ -323,8 +375,8 @@ def extract_obligations_task(self, event_id: str, force: bool = False):
         circuit_breaker.record_failure("openai:obligations")
         raise self.retry(countdown=30 * (2 ** self.request.retries))
 
-    if result.get("status") in {"extracted", "no_obligations"}:
-        circuit_breaker.record_success("openai:obligations")
+    # Successes do NOT clear breaker state — failures age out of the
+    # sliding window on their own. See circuit_breaker.record_success.
 
     return result
 
@@ -359,6 +411,117 @@ def match_change_event(self, event_id: str):
 
     log.info("done", alerts_created=result.get("alerts_created", 0))
     return result
+
+
+# ── M5b Alert Delivery ───────────────────────────────────────────────────────
+@celery.task(
+    name="app.celery_app.deliver_alert",
+    bind=True,
+    max_retries=settings.DELIVER_ALERT_MAX_RETRIES,
+    acks_late=True,
+)
+def deliver_alert(self, alert_id: str):
+    """
+    Push one Alert through its subscription's channel (email / slack / …).
+
+    Enqueued by ``matching.match_event`` once per newly inserted alert.
+    Idempotent: alerts with ``delivered_at`` set are skipped, so a
+    duplicate enqueue is harmless.
+
+    Retry policy
+      * Exponential backoff: 30s, 60s, 120s, 240s, 480s.
+      * Caps at ``DELIVER_ALERT_MAX_RETRIES`` then dead-letters (the
+        partial index ``idx_alerts_pending_delivery`` makes these
+        visible for a future retry-sweeper).
+
+    Kill switch
+      * ``ALERT_DELIVERY_ENABLED=false`` short-circuits all delivery
+        so you can stage M5 safely in prod before opening the firehose.
+    """
+    from datetime import datetime, timezone
+    from uuid import UUID
+
+    from sqlmodel import Session
+
+    from app.database import engine
+    from app.models import Alert, ChangeEvent, UserSubscription
+    from app.services.notifiers import NotifierError, get_notifier
+
+    log = logger.bind(task="deliver_alert", alert_id=alert_id)
+
+    if not settings.ALERT_DELIVERY_ENABLED:
+        log.info("delivery_disabled_skipping")
+        return {"status": "disabled", "alert_id": alert_id}
+
+    with Session(engine) as session:
+        alert = session.get(Alert, UUID(alert_id))
+        if alert is None:
+            log.warning("alert_not_found")
+            return {"status": "missing", "alert_id": alert_id}
+        if alert.delivered_at is not None:
+            return {"status": "already_delivered", "alert_id": alert_id}
+
+        subscription = session.get(UserSubscription, alert.subscription_id)
+        event = session.get(ChangeEvent, alert.change_event_id)
+        if subscription is None or event is None:
+            # Orphaned alert — nothing we can do. Mark error so it
+            # stops re-queuing and is visible in the pending index.
+            alert.delivery_error = "orphaned: missing subscription or event"
+            alert.delivery_attempts += 1
+            session.add(alert)
+            session.commit()
+            log.warning("alert_orphaned",
+                        subscription_present=subscription is not None,
+                        event_present=event is not None)
+            return {"status": "orphaned", "alert_id": alert_id}
+
+        # Pick the notifier. None == inbox-only sub; we record that and
+        # exit without attempting delivery.
+        try:
+            notifier = get_notifier(subscription.channel)
+        except NotifierError as exc:
+            alert.delivery_error = str(exc)[:500]
+            alert.delivery_attempts += 1
+            session.add(alert)
+            session.commit()
+            log.warning("notifier_lookup_failed",
+                        channel=subscription.channel, error=str(exc))
+            return {"status": "unroutable", "alert_id": alert_id,
+                    "error": str(exc)}
+
+        if notifier is None:
+            alert.delivered_at = datetime.now(timezone.utc)
+            alert.delivery_error = None
+            session.add(alert)
+            session.commit()
+            log.info("inbox_only_subscription")
+            return {"status": "inbox_only", "alert_id": alert_id}
+
+        alert.delivery_attempts += 1
+        try:
+            notifier.send(alert=alert, event=event, subscription=subscription)
+        except NotifierError as exc:
+            alert.delivery_error = str(exc)[:500]
+            session.add(alert)
+            session.commit()
+            log.warning("delivery_failed",
+                        channel=subscription.channel,
+                        attempt=alert.delivery_attempts,
+                        error=str(exc)[:300])
+            raise self.retry(
+                exc=exc,
+                countdown=30 * (2 ** self.request.retries),
+            )
+
+        alert.delivered_at = datetime.now(timezone.utc)
+        alert.delivery_error = None
+        session.add(alert)
+        session.commit()
+
+    log.info("delivered",
+             channel=subscription.channel,
+             attempts=alert.delivery_attempts)
+    return {"status": "delivered", "alert_id": alert_id}
 
 
 # ── Web crawl ────────────────────────────────────────────────────────────────

@@ -18,7 +18,13 @@ Algorithm
   failures within the window crosses ``THRESHOLD``. We also set an
   explicit ``open_until`` key so the breaker stays open for the full
   ``COOLDOWN`` even if old failures age out.
-* :func:`record_success(scope)` clears state.
+* The breaker is self-healing: after ``COOLDOWN`` the ``open_until``
+  key TTLs out and old failures age out of the sliding window, so the
+  next failure-free period naturally closes the breaker. We do NOT
+  clear failure state on every successful call — that would defeat
+  the sliding-window count on a flapping upstream.
+* :func:`record_success(scope)` remains as a manual reset tool for
+  operators (e.g. after rotating an API key).
 
 Failure modes
 -------------
@@ -55,7 +61,6 @@ def _client() -> _redis.Redis | None:
 
 def is_open(scope: str) -> bool:
     """Return True if the breaker for ``scope`` is currently open."""
-    settings = get_settings()
     cli = _client()
     if cli is None:
         return False  # fail-open: don't block real work on bookkeeping outage
@@ -109,7 +114,17 @@ def record_failure(scope: str) -> bool:
 
 
 def record_success(scope: str) -> None:
-    """Clear all breaker bookkeeping for ``scope`` (call on a successful LLM round-trip)."""
+    """Manual reset for ``scope``. Clears the failure window and any open state.
+
+    NOT intended to be called on every successful LLM round-trip — doing so
+    would defeat the sliding-window count (a flapping API going
+    fail-fail-...-fail-success-fail-fail would never trip because each
+    success wipes the history). Failures age out of the window naturally
+    via the zset's TTL, so the closed->open->closed cycle is self-healing.
+
+    Exposed for operators who want to force-clear a stuck breaker
+    (e.g. after rotating an API key) and for the test suite.
+    """
     cli = _client()
     if cli is None:
         return

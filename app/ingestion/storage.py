@@ -43,12 +43,51 @@ from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import Session, select
 
+from app.config import get_settings
 from app.database import engine
 from app.ingestion.artifact_store import upload_artifacts
 from app.models import RawDocument
 from app.services.change_detection import record_changes
+from app.services.content_filter import is_regulatory_content
 
 logger = logging.getLogger(__name__)
+
+
+def _apply_content_filter(
+    docs: List[RawDocument],
+) -> tuple[List[RawDocument], int, Dict[str, int]]:
+    """
+    Drop docs that fail the universal regulatory-content heuristic.
+
+    Runs BEFORE any DB write or S3 upload, so filtered docs never
+    consume storage, never get versioned, and never trigger an LLM
+    scoring call.
+
+    Returns ``(kept, dropped_count, reasons)`` — ``reasons`` maps
+    reason_code → count for the log line.
+    """
+    settings = get_settings()
+    if not settings.CONTENT_FILTER_ENABLED:
+        return docs, 0, {}
+
+    kept: List[RawDocument] = []
+    reasons: Dict[str, int] = {}
+    for doc in docs:
+        passed, info = is_regulatory_content(
+            doc.raw_text or "", title=doc.title,
+        )
+        if passed:
+            kept.append(doc)
+            continue
+        reason = info.get("reason", "unknown")
+        reasons[reason] = reasons.get(reason, 0) + 1
+        logger.debug(
+            "content_filter_dropped: url=%s reason=%s word_count=%s "
+            "keyword_hits=%s",
+            doc.source_url, reason,
+            info.get("word_count"), info.get("keyword_hits"),
+        )
+    return kept, len(docs) - len(kept), reasons
 
 
 def _archive_to_object_store(doc: RawDocument) -> None:
@@ -94,10 +133,23 @@ def _lookup_existing_artifact_uris(
     return {ch: uri for ch, uri in rows}
 
 
-def upsert_documents(documents: List[RawDocument]) -> dict:
+def upsert_documents(
+    documents: List[RawDocument],
+    *,
+    skip_filter: bool = False,
+) -> dict:
     """
     Persist *documents* to the raw_documents table, then emit change
     events for any content-hash transitions.
+
+    Parameters
+    ----------
+    documents
+        Candidates from any ingestion connector.
+    skip_filter
+        Bypass the content filter. Used by tests with synthetic data
+        that intentionally won't match regulatory heuristics. Always
+        False in production.
 
     Returns
     -------
@@ -110,12 +162,37 @@ def upsert_documents(documents: List[RawDocument]) -> dict:
         created     — number of change_events of kind 'created' emitted
         modified    — number of change_events of kind 'modified' emitted
         unchanged   — number of docs whose hash already existed as the latest
+        filtered    — number of docs dropped by the content filter
+        filter_reasons — {reason_code: count} for operations dashboards
     """
     if not documents:
         return {
             "inserted": 0, "updated": 0, "archived": 0,
             "created": 0, "modified": 0, "unchanged": 0,
+            "filtered": 0, "filter_reasons": {},
         }
+
+    # ── Phase 0: universal content filter ──────────────────────────
+    # Runs BEFORE any DB or S3 work — a dropped doc costs nothing
+    # downstream.
+    filter_reasons: Dict[str, int] = {}
+    filtered_count = 0
+    if not skip_filter:
+        documents, filtered_count, filter_reasons = _apply_content_filter(
+            documents,
+        )
+        if filtered_count:
+            logger.info(
+                "content_filter: kept=%d dropped=%d reasons=%s",
+                len(documents), filtered_count, filter_reasons,
+            )
+        if not documents:
+            return {
+                "inserted": 0, "updated": 0, "archived": 0,
+                "created": 0, "modified": 0, "unchanged": 0,
+                "filtered": filtered_count,
+                "filter_reasons": filter_reasons,
+            }
 
     now = datetime.now(timezone.utc)
     inserted = 0
@@ -200,4 +277,6 @@ def upsert_documents(documents: List[RawDocument]) -> dict:
         "updated": updated,
         "archived": new_uploads,
         **change_counts,
+        "filtered": filtered_count,
+        "filter_reasons": filter_reasons,
     }

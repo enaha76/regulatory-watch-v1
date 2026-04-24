@@ -19,11 +19,15 @@ from sqlmodel import Session, select
 
 from app.database import get_session
 from app.models import UserSubscription
+from app.services.matching import validate_keyword_query
 
 router = APIRouter(prefix="/api/subscriptions", tags=["M5 Subscriptions"])
 
 
 # ── Request / Response schemas ───────────────────────────────────────────────
+
+_VALID_CHANNELS = ("email", "slack", "webhook", "none")
+
 
 class SubscriptionCreate(BaseModel):
     """POST body for creating a subscription."""
@@ -47,6 +51,18 @@ class SubscriptionCreate(BaseModel):
         examples=["lithium & batteri:*"],
         description="PostgreSQL tsquery string for full-text matching.",
     )
+    channel: str = Field(
+        default="email", max_length=20,
+        description="Delivery channel: email | slack | webhook | none.",
+        examples=["email"],
+    )
+    channel_target: Optional[str] = Field(
+        default=None, max_length=512,
+        description=(
+            "Per-channel target override. For email: alternate recipient. "
+            "For slack/webhook: the destination URL. Ignored for 'none'."
+        ),
+    )
 
 
 class SubscriptionUpdate(BaseModel):
@@ -57,6 +73,8 @@ class SubscriptionUpdate(BaseModel):
     destination_countries: Optional[list[str]] = None
     min_significance: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     keyword_query: Optional[str] = None
+    channel: Optional[str] = Field(default=None, max_length=20)
+    channel_target: Optional[str] = Field(default=None, max_length=512)
     is_active: Optional[bool] = None
 
 
@@ -70,11 +88,23 @@ class SubscriptionRead(BaseModel):
     destination_countries: Optional[list[str]]
     min_significance: float
     keyword_query: Optional[str]
+    channel: str
+    channel_target: Optional[str]
     is_active: bool
     created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+def _validate_channel(channel: Optional[str]) -> None:
+    if channel is None:
+        return
+    if channel not in _VALID_CHANNELS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"channel must be one of {_VALID_CHANNELS}",
+        )
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
@@ -85,6 +115,12 @@ def create_subscription(
     session: Session = Depends(get_session),
 ):
     """Create a new alerting subscription."""
+    _validate_channel(body.channel)
+    if body.keyword_query:
+        try:
+            validate_keyword_query(body.keyword_query)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     sub = UserSubscription(**body.model_dump())
     session.add(sub)
     session.commit()
@@ -118,6 +154,13 @@ def update_subscription(
         raise HTTPException(status_code=404, detail="Subscription not found")
 
     update_data = body.model_dump(exclude_unset=True)
+    if "channel" in update_data:
+        _validate_channel(update_data["channel"])
+    if "keyword_query" in update_data and update_data["keyword_query"]:
+        try:
+            validate_keyword_query(update_data["keyword_query"])
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     for key, value in update_data.items():
         setattr(sub, key, value)
     sub.updated_at = datetime.now(timezone.utc)

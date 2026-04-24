@@ -118,6 +118,13 @@ class SignificanceOutput(BaseModel):
     # list of strings so a single typo doesn't fail the whole call.
     origin_countries: list[str] = Field(default_factory=list)
     trade_flow_direction: Optional[str] = Field(default=None)
+    # ── M5c: Explainability / XAI ────────────────────────────────────
+    # Verbatim quote from the source document that best demonstrates
+    # the change. The scorer asks the LLM to copy it exactly; we
+    # locate it deterministically downstream via citations.locate_quote.
+    # Empty string / None when no specific sentence applies (cosmetic
+    # changes, landing pages, etc).
+    trigger_quote: Optional[str] = Field(default=None, max_length=2000)
 
     @field_validator("change_type")
     @classmethod
@@ -228,6 +235,22 @@ You MUST respond with a single JSON object matching this schema:
                        - "global"    : multilateral / jurisdiction-agnostic.
                        null when the document has no trade-flow aspect
                        (e.g. a pure domestic labour-safety rule).
+  "trigger_quote":    a single sentence copied VERBATIM from the document
+                       that best demonstrates WHY this change matters —
+                       the one sentence a compliance officer would
+                       highlight when explaining "here's the change."
+                       - Copy exactly: preserve punctuation, capitalization,
+                         numbers, quotes. Do NOT paraphrase. Do NOT merge
+                         two sentences. Do NOT add ellipses.
+                       - Prefer the sentence establishing the NEW rule
+                         over the one it replaces.
+                       - For MODIFIED events, quote from the NEW version,
+                         not from the removed text.
+                       - Return "" (empty string) when no single sentence
+                         meaningfully explains the change — e.g. pure
+                         cosmetic / whitespace changes, or boilerplate
+                         landing pages with no real content.
+                       - Max ~500 characters.
 
 Rules for MODIFIED events (unified diff provided):
 - If the diff is only added/removed whitespace, punctuation, nav links, image
@@ -469,16 +492,18 @@ def score_event(event_id: UUID, *, retry_errors: bool = False) -> dict:
         title: Optional[str] = None
         new_content: Optional[str] = None
         context_snippet: Optional[str] = None
+        full_source_text: str = ""  # for post-parse trigger_quote locating
         if event.new_version_id:
             sv = session.get(SourceVersion, event.new_version_id)
             if sv is not None:
                 title = sv.title
+                full_source_text = sv.raw_text or ""
                 if event.diff_kind == "created":
-                    new_content = sv.raw_text
+                    new_content = full_source_text
                 elif event.diff_kind == "modified":
                     # Provide surrounding context so the LLM knows
                     # which section/actor the diff applies to.
-                    context_snippet = _trim_content(sv.raw_text or "")
+                    context_snippet = _trim_content(full_source_text)
 
         user_prompt = _build_user_prompt(
             source_url=event.source_url,
@@ -538,6 +563,7 @@ def score_event(event_id: UUID, *, retry_errors: bool = False) -> dict:
             return {"status": "error", "event_id": str(event_id), "error": err}
 
         # ── Persist ───────────────────────────────────────────────────
+        from app.services.citations import locate_quote
         from app.services.geo import (
             assign_trade_countries,
             normalize_country_codes,
@@ -553,6 +579,26 @@ def score_event(event_id: UUID, *, retry_errors: bool = False) -> dict:
             if parsed.deadline_changes
             else None
         )
+
+        # M5c — store the LLM-cited quote and (best-effort) its
+        # char-offset span in the source text. Quote is kept even when
+        # we can't locate it (LLM may have paraphrased); UI will still
+        # show it, just without in-document highlighting.
+        trigger_quote_clean = (parsed.trigger_quote or "").strip()
+        if trigger_quote_clean:
+            event.trigger_quote = trigger_quote_clean
+            if full_source_text:
+                span = locate_quote(full_source_text, trigger_quote_clean)
+                if span is not None:
+                    event.trigger_span_start = span[0]
+                    event.trigger_span_end = span[1]
+                else:
+                    event.trigger_span_start = None
+                    event.trigger_span_end = None
+        else:
+            event.trigger_quote = None
+            event.trigger_span_start = None
+            event.trigger_span_end = None
         # M5 translation note: when the source document's language matches
         # the user's preferred_lang, bypass the English summary entirely.
         # The LLM should summarize directly in the source language to avoid
@@ -590,6 +636,8 @@ def score_event(event_id: UUID, *, retry_errors: bool = False) -> dict:
                  destination_countries=dest_iso,
                  trade_flow_direction=parsed.trade_flow_direction,
                  jurisdiction=jurisdiction,
+                 trigger_quote_len=len(event.trigger_quote or ""),
+                 trigger_span_located=event.trigger_span_start is not None,
                  source_url=event.source_url)
 
     # Post-scoring enrichment (M4) — best-effort; runs OUTSIDE the
