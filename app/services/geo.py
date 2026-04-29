@@ -40,6 +40,12 @@ from urllib.parse import urlparse
 # for the United Kingdom so they fit the same column type; the LLM is
 # allowed to emit those too).
 _HOST_TO_JURISDICTION: dict[str, tuple[str, ...]] = {
+    # Local mock servers (testing only)
+    "mock-server":       ("US",),
+    "mock-website":      ("US",),
+    "mock-website.local": ("US",),
+    "localhost":         ("US",),
+
     # United States (federal regulators)
     "cbp.gov":           ("US",),
     "ustr.gov":          ("US",),

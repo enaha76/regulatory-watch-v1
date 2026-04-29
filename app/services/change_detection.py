@@ -185,17 +185,19 @@ def record_change(doc: RawDocument) -> Optional[ChangeEvent]:
         )
 
         # ── Enqueue Layer-3 scoring (best-effort, non-blocking) ───────
-        # Celery broker is not a hard ingestion dependency. If Redis is
-        # down or the task import fails, we log and continue — the event
-        # can be backfilled later via scripts/score_backlog.py.
-        try:
-            from app.celery_app import score_change_event  # local to avoid circular import
-            score_change_event.delay(str(event.id))
-        except Exception as enqueue_exc:
-            logger.warning(
-                "change_event %s emitted but scoring enqueue failed: %s",
-                event.id, enqueue_exc,
-            )
+        # Only score 'modified' events. A 'created' event means this is
+        # the first time we've seen this URL — we are building the baseline,
+        # not detecting a change. Scoring and alerting only make sense when
+        # we can diff old content vs new content.
+        if kind == "modified":
+            try:
+                from app.celery_app import score_change_event  # local to avoid circular import
+                score_change_event.delay(str(event.id))
+            except Exception as enqueue_exc:
+                logger.warning(
+                    "change_event %s emitted but scoring enqueue failed: %s",
+                    event.id, enqueue_exc,
+                )
 
         return event
 

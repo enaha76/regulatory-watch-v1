@@ -76,6 +76,18 @@ class Settings(BaseSettings):
     # Truncated-response logging on parse failure (keeps PII bounded).
     LLM_ERROR_LOG_RESPONSE_CHARS: int = Field(default=1000, ge=100, le=5000)
 
+    # ── Embeddings ───────────────────────────────────────
+    # Model used for semantic subscription/document embeddings.
+    EMBEDDING_MODEL: str = "text-embedding-3-small"
+    # Dimension must match the model (3-small=1536, 3-large=3072).
+    EMBEDDING_DIM: int = Field(default=1536, ge=64)
+    # Default cosine similarity threshold for subscription matching.
+    # 0 = angle of 90° (unrelated); 1 = identical. 0.72 is a practical
+    # starting point for regulatory text — tune down for more recall.
+    EMBEDDING_SIMILARITY_THRESHOLD: float = Field(default=0.50, ge=0.0, le=1.0)
+    # USD per 1M tokens for the embedding model.
+    EMBEDDING_PRICE_USD_PER_1M: float = Field(default=0.02, ge=0)
+
     # ── LLM cost & usage accounting ──────────────────────
     # USD per 1M tokens. Defaults = gpt-4o-mini public list price at
     # time of writing ($0.15 in / $0.60 out). Override via env per

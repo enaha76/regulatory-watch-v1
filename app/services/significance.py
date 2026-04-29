@@ -575,6 +575,22 @@ def score_event(event_id: UUID, *, retry_errors: bool = False) -> dict:
         event.llm_model = settings.OPENAI_MODEL
         event.llm_error = None  # clear any prior failure
         event.scored_at = datetime.now(timezone.utc)
+
+        # ── M5 semantic embedding ─────────────────────────────────────
+        # Embed summary + entities + topic so the matching engine can do
+        # cosine similarity against subscription embeddings. Best-effort:
+        # a failure here never blocks scoring from persisting.
+        try:
+            from app.services.embeddings import build_doc_text, embed
+            doc_text = build_doc_text(event)
+            if doc_text:
+                event.embedding = embed(doc_text)
+        except Exception as _emb_exc:  # noqa: BLE001
+            log.warning("doc_embedding_failed",
+                        error=str(_emb_exc),
+                        error_type=type(_emb_exc).__name__,
+                        event_id=str(event_id))
+
         session.add(event)
         session.commit()
 

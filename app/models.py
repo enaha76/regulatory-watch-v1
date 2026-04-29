@@ -6,6 +6,7 @@ Versioning models: SourceVersion (immutable history), ChangeEvent (diffs).
 
 from sqlmodel import SQLModel, Field, Relationship, Column
 from sqlalchemy import JSON, Text, String, CheckConstraint, UniqueConstraint, Date, ARRAY
+from pgvector.sqlalchemy import Vector
 from typing import Optional
 from uuid import UUID, uuid4
 from datetime import datetime, date, timezone
@@ -328,6 +329,13 @@ class ChangeEvent(SQLModel, table=True):
         default=None, max_length=12,
     )
 
+    # Semantic embedding of (topic + entities + summary) — populated after
+    # L3 scoring. Used by M5 matching for cosine similarity against
+    # subscription embeddings. NULL on old/unscored events.
+    embedding: Optional[list] = Field(
+        default=None, sa_column=Column(Vector(1536), nullable=True),
+    )
+
     detected_at: datetime = Field(default_factory=utcnow, index=True)
 
 
@@ -428,32 +436,22 @@ class UserSubscription(SQLModel, table=True):
     user_email: str = Field(max_length=255, index=True)
     label: str = Field(max_length=255, default="Default Subscription")
 
-    # ── Structured metadata pre-filters (Stage 1) ────────────────────
-    # NULL means "match any".
-    topics: Optional[list[str]] = Field(
-        default=None,
-        sa_column=Column(ARRAY(String(length=40)), nullable=True),
+    # ── Keyword list + semantic embedding ────────────────────────────
+    # `keywords` stores the raw list for display and post-match XAI.
+    # `embedding` is the single vector for the concatenated keyword
+    # string, computed once at create/update via text-embedding-3-small.
+    # NULL embedding → subscription is skipped at match time.
+    keywords: list[str] = Field(
+        default=[], sa_column=Column(JSON, nullable=False, server_default="[]"),
     )
-    origin_countries: Optional[list[str]] = Field(
-        default=None,
-        sa_column=Column(ARRAY(String(length=8)), nullable=True),
+    embedding: Optional[list] = Field(
+        default=None, sa_column=Column(Vector(1536), nullable=True),
     )
-    destination_countries: Optional[list[str]] = Field(
-        default=None,
-        sa_column=Column(ARRAY(String(length=8)), nullable=True),
-    )
+    # Cosine similarity threshold [0, 1]. A higher value means stricter
+    # matching (fewer, more precise alerts).
+    similarity_threshold: float = Field(default=0.72)
+
     min_significance: float = Field(default=0.6)
-
-    # ── Full-text keyword percolation (Stage 2) ──────────────────────
-    # Raw PostgreSQL tsquery string. Examples:
-    #   "lithium & batteri:*"        → lithium AND battery/batteries
-    #   "ECCN & 3A090"               → exact code match
-    #   "tariff | customs"           → tariff OR customs
-    # NULL means "skip keyword check — only use metadata filters".
-    keyword_query: Optional[str] = Field(
-        default=None, sa_column=Column(Text, nullable=True),
-    )
-
     is_active: bool = Field(default=True, index=True)
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)

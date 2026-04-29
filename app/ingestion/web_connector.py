@@ -87,21 +87,114 @@ _SKIP_EXTENSIONS = (
     ".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".ico",
 )
 
-# URL path patterns that trigger downloads or serve non-HTML content
-_SKIP_PATH_PATTERNS = (
-    "nota_to_doc", "nota_to_imagen", "download", "export",
-    "print_version", "printable", "/attachment/",
+# URL path/query fragments that indicate a non-regulatory useless page.
+# Checked against the lowercased full URL (path + query).
+# Ordered from most common to least for early exit.
+_SKIP_URL_FRAGMENTS = (
+    # ── Auth & account ────────────────────────────────────────────
+    "/login", "/logout", "/signin", "/sign-in", "/sign-up",
+    "/signup", "/register", "/forgot-password", "/reset-password",
+    "/change-password", "/my-account", "/my-profile", "/user-profile",
+    "/account/", "/session/",
+
+    # ── Contact & corporate ───────────────────────────────────────
+    "/contact", "/contact-us", "/about-us", "/about/team",
+    "/our-team", "/meet-the-team", "/careers", "/jobs",
+    "/vacancies", "/press", "/media-center", "/newsroom",
+    "/investors", "/advertise", "/partners", "/sponsors",
+
+    # ── Legal boilerplate ─────────────────────────────────────────
+    "/privacy", "/privacy-policy", "/terms", "/terms-of-service",
+    "/terms-and-conditions", "/cookie", "/cookies", "/cookie-policy",
+    "/accessibility", "/accessibility-statement", "/disclaimer",
+    "/copyright", "/legal-notice", "/legal-information",
+
+    # ── Navigation & utility ──────────────────────────────────────
+    "/sitemap", "/site-map", "/help", "/faq", "/support",
+    "/feedback", "/newsletter", "/subscribe", "/unsubscribe",
+    "/404", "/error", "/page-not-found", "/not-found",
+
+    # ── Social / share ────────────────────────────────────────────
+    "/share", "/social-media", "/follow-us",
+
+    # ── Print / export / download ─────────────────────────────────
+    "/print", "/print-version", "/printable", "/export",
+    "/download", "/attachment/", "nota_to_doc", "nota_to_imagen",
+
+    # ── Search result pages (not documents) ───────────────────────
+    "?q=", "?query=", "?keyword=", "?search=", "?s=",
+
+    # ── Language / pagination params ──────────────────────────────
+    "?lang=", "?language=", "?locale=",
 )
 
+
 def _is_skippable_url(url: str) -> bool:
-    """Return True for binary/download URLs that should never be crawled."""
-    path = urlparse(url).path.lower()
-    if any(path.endswith(ext) for ext in _SKIP_EXTENSIONS):
+    """Return True for URLs that have no regulatory content value."""
+    parsed = urlparse(url)
+    path_lower = parsed.path.lower()
+    full_lower = (parsed.path + ("?" + parsed.query if parsed.query else "")).lower()
+
+    if any(path_lower.endswith(ext) for ext in _SKIP_EXTENSIONS):
         return True
-    if any(pat in path for pat in _SKIP_PATH_PATTERNS):
+    if any(frag in full_lower for frag in _SKIP_URL_FRAGMENTS):
         return True
     return False
 
+
+# ── Regulatory keyword list for BestFirstCrawlingStrategy scorer ─────────────
+# Used by KeywordRelevanceScorer to rank discovered URLs by regulatory relevance
+# so the most important pages are visited first within the max_pages budget.
+REGULATORY_KEYWORDS = [
+    # Core regulatory language
+    "regulation", "regulatory", "rule", "rulemaking", "ruling",
+    "law", "legislation", "statute", "act", "directive", "decision",
+    "order", "notice", "guidance", "policy", "framework", "procedure",
+    "compliance", "noncompliance", "enforcement", "penalty", "sanction",
+    "fine", "violation", "infringement", "obligation", "requirement",
+    "mandate", "mandatory", "prohibition", "prohibited", "restriction",
+    "deadline", "effective date", "implementation", "coming into force",
+    "amendment", "revision", "repeal", "update",
+    "official gazette", "federal register", "official journal",
+    # Trade & customs
+    "tariff", "customs", "duty", "duties", "excise", "levy",
+    "import", "export", "trade", "cross-border", "commerce",
+    "HS code", "HTS", "TARIC", "harmonized system",
+    "quota", "embargo", "anti-dumping", "countervailing", "safeguard",
+    "free trade", "FTA", "preferential tariff",
+    "customs clearance", "port of entry", "border control",
+    "CBP", "HMRC", "rules of origin", "certificate of origin",
+    "Section 301", "Section 232", "Section 201",
+    # Export controls & sanctions
+    "export control", "dual-use", "ECCN", "EAR",
+    "OFAC", "sanctions", "embargoed", "entity list", "denied party",
+    "BIS", "Commerce Control List",
+    # Financial services
+    "AML", "anti-money laundering", "KYC", "MiFID", "Basel",
+    "capital requirement", "reporting obligation", "disclosure",
+    "financial regulation", "banking regulation", "securities",
+    "fintech", "crypto", "digital asset", "FATF", "FinCEN",
+    # Data privacy & cybersecurity
+    "GDPR", "CCPA", "data protection", "personal data",
+    "data breach", "cybersecurity", "adequacy decision",
+    # Environmental
+    "emissions", "carbon", "greenhouse gas", "CBAM",
+    "carbon border adjustment", "waste regulation", "hazardous substance",
+    "REACH", "RoHS", "PFAS", "environmental impact",
+    "sustainability reporting", "deforestation regulation",
+    # Health & pharma
+    "pharmaceutical", "drug approval", "medical device",
+    "FDA", "EMA", "marketing authorization", "pharmacovigilance", "recall",
+    # Labor & employment
+    "minimum wage", "workplace safety", "labor law",
+    "immigration", "work permit", "posted workers",
+    # Tax
+    "VAT", "GST", "withholding tax", "transfer pricing",
+    "BEPS", "FATCA", "CRS", "country-by-country reporting",
+    # Corporate governance
+    "ESG reporting", "sustainability disclosure",
+    "antitrust", "merger control", "corporate governance",
+]
 
 # Content extraction (cleaning, markdown post-processing, LLM fallback) lives
 # in app.ingestion.web_extractor. We re-export the underscore-prefixed names
@@ -556,72 +649,219 @@ class WebConnector(IngestorBase):
     async def _fetch_impl(self) -> List[RawDocument]:
         html_documents: List[RawDocument] = []
         seen_hashes: Set[str] = set()
-        visited_urls: Set[str] = set()
         pdf_urls: Set[str] = set()
         xml_urls: Set[str] = set()
 
-        queue: deque[tuple[str, int]] = deque()
-        for raw_url in self.seed_urls:
-            norm = normalize_url(raw_url)
-            if norm and norm not in visited_urls:
-                queue.append((norm, 0))
-                visited_urls.add(norm)
-
         logger.info(
-            "WebConnector starting: domain=%s seeds=%d max_pages=%d concurrent=%d",
-            self.allowed_domain, len(self.seed_urls),
-            self.max_pages, self.MAX_CONCURRENT,
+            "WebConnector starting: domain=%s seeds=%d max_pages=%d",
+            self.allowed_domain, len(self.seed_urls), self.max_pages,
         )
 
-        while queue and len(html_documents) < self.max_pages:
-            # ── Build a batch of URLs to fetch concurrently ───────────
-            batch: List[tuple[str, int]] = []
-            while (
-                queue
-                and len(batch) < self.MAX_CONCURRENT
-                and len(html_documents) + len(batch) < self.max_pages
-            ):
-                url, depth = queue.popleft()
-                if not await self._is_allowed(url):
-                    continue
-                batch.append((url, depth))
+        # ── Try Crawl4AI BestFirstCrawlingStrategy ────────────────────────────
+        # Ranks discovered URLs by regulatory keyword relevance so the most
+        # important pages are visited first within the max_pages budget.
+        # Falls back to manual BFS if Crawl4AI deep-crawl API is unavailable.
+        crawl4ai_results = []
+        try:
+            from crawl4ai.deep_crawling import BestFirstCrawlingStrategy  # type: ignore
+            from crawl4ai.deep_crawling.scorers import KeywordRelevanceScorer  # type: ignore
+            from crawl4ai.deep_crawling.filters import FilterChain, URLPatternFilter  # type: ignore
 
-            if not batch:
-                break
+            scorer = KeywordRelevanceScorer(
+                keywords=REGULATORY_KEYWORDS,
+                weight=0.7,
+            )
+            # Include only URLs that look like actual content pages.
+            # This is an inclusion filter — complements _is_skippable_url
+            # exclusions that run at link-discovery time.
+            url_filter = URLPatternFilter(patterns=[
+                "*regulation*", "*rule*", "*ruling*", "*guidance*",
+                "*notice*", "*directive*", "*compliance*", "*enforcement*",
+                "*tariff*", "*customs*", "*import*", "*export*",
+                "*trade*", "*sanction*", "*penalty*", "*obligation*",
+                "*amendment*", "*document*", "*publication*",
+                "*bulletin*", "*gazette*", "*register*",
+                # generic patterns that catch most gov doc URLs
+                "*/?id=*", "*/id/*", "*/doc/*", "*/docs/*",
+                "*/page/*", "*/pages/*", "*/content/*",
+                "*/news/*", "*/updates/*", "*/announcement*",
+                "*/legal/*", "*/law/*", "*/legislation/*",
+            ])
+            filter_chain = FilterChain([url_filter])
 
-            logger.info(
-                "Fetching batch of %d pages (docs so far: %d)",
-                len(batch), len(html_documents),
+            strategy = BestFirstCrawlingStrategy(
+                max_depth=self.max_depth,
+                max_pages=self.max_pages,
+                include_external=False,
+                url_scorer=scorer,
+                filter_chain=filter_chain,
             )
 
-            # ── Fetch all pages in batch concurrently ─────────────────
-            fetch_tasks = [self._fetch_page(url) for url, _ in batch]
-            responses = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+            await self._init_crawler()
+            if self._crawler is not None:
+                from crawl4ai import CrawlerRunConfig, CacheMode  # type: ignore
 
-            # ── Process each response ─────────────────────────────────
-            for (url, depth), response in zip(batch, responses):
-                if isinstance(response, Exception):
-                    logger.warning("Fetch exception for %s: %s", url, response)
-                    continue
-                if response is None:
+                excluded_tags = ["nav", "header", "footer", "aside", "form", "noscript"]
+                excluded_selector = ", ".join([
+                    '[role="navigation"]', '[role="banner"]',
+                    '[role="contentinfo"]', '[role="search"]',
+                    ".navigation", ".site-header", ".site-footer",
+                    ".breadcrumb", ".breadcrumbs", ".cookie-banner",
+                    ".usa-banner", ".skip-link",
+                ])
+
+                run_cfg = CrawlerRunConfig(
+                    deep_crawl_strategy=strategy,
+                    cache_mode=CacheMode.BYPASS,
+                    page_timeout=30_000,
+                    wait_until="networkidle",
+                    excluded_tags=excluded_tags,
+                    excluded_selector=excluded_selector,
+                    word_count_threshold=10,
+                    exclude_external_images=True,
+                )
+
+                results = await self._crawler.arun(
+                    url=self.seed_urls[0],
+                    config=run_cfg,
+                )
+                crawl4ai_results = results if isinstance(results, list) else [results]
+                logger.info(
+                    "BestFirst crawl done: domain=%s pages=%d",
+                    self.allowed_domain, len(crawl4ai_results),
+                )
+
+        except (ImportError, AttributeError) as exc:
+            logger.warning(
+                "BestFirstCrawlingStrategy unavailable (%s) — falling back to BFS",
+                exc,
+            )
+            crawl4ai_results = []
+
+        # ── Process BestFirst results ─────────────────────────────────────────
+        if crawl4ai_results:
+            for result in crawl4ai_results:
+                if not getattr(result, "success", False):
                     continue
 
-                # Check status
-                status = getattr(response, "status", None) or getattr(response, "status_code", 0)
-                if status and status >= 400:
-                    logger.warning("HTTP %d for %s — skipping", status, url)
+                url = getattr(result, "url", "") or ""
+                if not url or _is_skippable_url(url):
+                    continue
+                if not is_same_domain(url, self.allowed_domain):
+                    continue
+                if self.allowed_path_prefix:
+                    if not urlparse(url).path.startswith(self.allowed_path_prefix):
+                        continue
+
+                markdown = self._crawl4ai_markdown(result)
+                raw_text = _clean_markdown(markdown) if markdown else None
+                if not raw_text or len(raw_text) < self.MIN_TEXT_LEN:
                     continue
 
-                # ── Extract text ──────────────────────────────────────
-                raw_text = await self._extract_text(response, url)
-                if raw_text:
-                    # Title needs to be extracted first so the blocker-page
-                    # detector can inspect it alongside the body.
+                # Extract title
+                title = url
+                try:
+                    from bs4 import BeautifulSoup  # type: ignore
+                    html = getattr(result, "html", "") or getattr(result, "cleaned_html", "") or ""
+                    if html:
+                        soup = BeautifulSoup(html, "html.parser")
+                        t = soup.find("title")
+                        if t and t.string:
+                            title = t.string.strip()
+                except Exception:
+                    pass
+
+                # Blocker detection
+                blocker_reason = _is_blocker_page(raw_text, title)
+                if blocker_reason:
+                    logger.warning(
+                        "blocker page skipped: reason=%s title=%r url=%s",
+                        blocker_reason, title[:80], url,
+                    )
+                    _record_block(url, blocker_reason)
+                    continue
+
+                # Harvest PDF/XML links from the page
+                html_body = getattr(result, "html", "") or getattr(result, "cleaned_html", "") or ""
+                if html_body:
+                    fake_response = self._HttpxResponse(
+                        body=html_body.encode("utf-8", errors="replace"),
+                        status_code=200,
+                        headers={},
+                    )
+                    for href in self._extract_links(fake_response, url):
+                        norm_href = normalize_url(href, base_url=url)
+                        if not norm_href:
+                            continue
+                        if self.harvest_pdfs and _is_pdf_url(norm_href):
+                            pdf_urls.add(norm_href)
+                        elif self.harvest_xml and _is_xml_url(norm_href):
+                            xml_urls.add(norm_href)
+
+                normalized = _normalize_for_hash(raw_text)
+                content_hash = _sha256(normalized)
+                if content_hash in seen_hashes:
+                    continue
+                seen_hashes.add(content_hash)
+                now = _utcnow()
+                html_documents.append(
+                    RawDocument(
+                        id=uuid4(),
+                        source_url=url,
+                        source_type="web",
+                        raw_text=raw_text,
+                        title=title,
+                        language=_detect_language(normalized),
+                        content_hash=content_hash,
+                        fetched_at=now,
+                        last_seen_at=now,
+                    )
+                )
+
+        # ── Fallback: manual BFS (when BestFirst unavailable) ─────────────────
+        else:
+            visited_urls: Set[str] = set()
+            queue: deque[tuple[str, int]] = deque()
+            for raw_url in self.seed_urls:
+                norm = normalize_url(raw_url)
+                if norm and norm not in visited_urls:
+                    queue.append((norm, 0))
+                    visited_urls.add(norm)
+
+            while queue and len(html_documents) < self.max_pages:
+                batch: List[tuple[str, int]] = []
+                while (
+                    queue
+                    and len(batch) < self.MAX_CONCURRENT
+                    and len(html_documents) + len(batch) < self.max_pages
+                ):
+                    url, depth = queue.popleft()
+                    if not await self._is_allowed(url):
+                        continue
+                    batch.append((url, depth))
+
+                if not batch:
+                    break
+
+                fetch_tasks = [self._fetch_page(url) for url, _ in batch]
+                responses = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+
+                for (url, depth), response in zip(batch, responses):
+                    if isinstance(response, Exception) or response is None:
+                        continue
+                    status = getattr(response, "status_code", 0) or 0
+                    if status >= 400:
+                        continue
+
+                    raw_text = await self._extract_text(response, url)
+                    if not raw_text:
+                        continue
+
                     title = url
                     try:
                         from bs4 import BeautifulSoup  # type: ignore
                         raw = getattr(response, "body", b"") or b""
-                        page_html = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else str(raw)
+                        page_html = raw.decode("utf-8", errors="replace")
                         soup = BeautifulSoup(page_html, "html.parser")
                         t = soup.find("title")
                         if t and t.string:
@@ -629,26 +869,19 @@ class WebConnector(IngestorBase):
                     except Exception:
                         pass
 
-                    # Guard against CAPTCHA / rate-limit interstitials being
-                    # stored as regulatory content (and firing spurious diffs
-                    # on every re-crawl as the challenge nonce rotates).
                     blocker_reason = _is_blocker_page(raw_text, title)
                     if blocker_reason:
                         logger.warning(
                             "blocker page skipped: reason=%s title=%r url=%s",
                             blocker_reason, title[:80], url,
                         )
-                        # Bump per-domain counter so operators can spot
-                        # a source that started blocking us. Best-effort.
                         _record_block(url, blocker_reason)
                     else:
-                        # Normalize for stable hashing and accurate language detection
                         normalized = _normalize_for_hash(raw_text)
                         content_hash = _sha256(normalized)
                         if content_hash not in seen_hashes:
                             seen_hashes.add(content_hash)
                             now = _utcnow()
-
                             html_documents.append(
                                 RawDocument(
                                     id=uuid4(),
@@ -663,47 +896,33 @@ class WebConnector(IngestorBase):
                                 )
                             )
 
-                # ── Discover links ────────────────────────────────────
-                if depth < self.max_depth:
-                    all_hrefs = self._extract_links(response, url)
-                    for href in all_hrefs:
-                        norm_href = normalize_url(href, base_url=url)
-                        if not norm_href:
-                            continue
-
-                        # Skip binary/download files entirely
-                        if _is_skippable_url(norm_href):
-                            continue
-
-                        # PDF link → harvest queue
-                        if self.harvest_pdfs and _is_pdf_url(norm_href):
-                            if norm_href not in pdf_urls:
-                                pdf_urls.add(norm_href)
-                            continue
-
-                        # XML link → harvest queue
-                        if self.harvest_xml and _is_xml_url(norm_href):
-                            if norm_href not in xml_urls:
-                                xml_urls.add(norm_href)
-                            continue
-
-                        # HTML link → BFS queue
-                        if norm_href in visited_urls:
-                            continue
-                        if not is_same_domain(norm_href, self.allowed_domain):
-                            continue
-                        if self.allowed_path_prefix:
-                            if not urlparse(norm_href).path.startswith(
-                                self.allowed_path_prefix
-                            ):
+                    if depth < self.max_depth:
+                        for href in self._extract_links(response, url):
+                            norm_href = normalize_url(href, base_url=url)
+                            if not norm_href or _is_skippable_url(norm_href):
                                 continue
-                        if is_spider_trap(norm_href):
-                            continue
-                        visited_urls.add(norm_href)
-                        queue.append((norm_href, depth + 1))
+                            if self.harvest_pdfs and _is_pdf_url(norm_href):
+                                pdf_urls.add(norm_href)
+                                continue
+                            if self.harvest_xml and _is_xml_url(norm_href):
+                                xml_urls.add(norm_href)
+                                continue
+                            if norm_href in visited_urls:
+                                continue
+                            if not is_same_domain(norm_href, self.allowed_domain):
+                                continue
+                            if self.allowed_path_prefix:
+                                if not urlparse(norm_href).path.startswith(
+                                    self.allowed_path_prefix
+                                ):
+                                    continue
+                            if is_spider_trap(norm_href):
+                                continue
+                            visited_urls.add(norm_href)
+                            queue.append((norm_href, depth + 1))
 
         logger.info(
-            "WebConnector BFS done: domain=%s html=%d pdf_links=%d xml_links=%d",
+            "WebConnector crawl done: domain=%s html=%d pdf_links=%d xml_links=%d",
             self.allowed_domain, len(html_documents),
             len(pdf_urls), len(xml_urls),
         )

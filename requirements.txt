@@ -7,6 +7,7 @@ pydantic-settings==2.7.1
 sqlmodel==0.0.22
 psycopg2-binary==2.9.10
 alembic==1.14.1
+pgvector==0.3.6
 
 # ── Task Queue ────────────────────────────────────────────
 celery[redis]==5.4.0
@@ -32,7 +33,7 @@ certifi>=2024.8.30
 truststore>=0.9.2
 
 # ── Ingestion layer ────────────────────────────────────────
-scrapling[fetchers]          # Anti-bot, stealth browser, concurrent crawling
+scrapling                    # Used by benchmark scripts only; browser engine not used in production
 markdownify>=0.14.1          # HTML to markdown conversion for clean text extraction
 beautifulsoup4>=4.12.0       # HTML parsing for content and link extraction
 lxml>=5.0.0                  # XML/HTML parsing (used by Scrapling and XMLConnector)

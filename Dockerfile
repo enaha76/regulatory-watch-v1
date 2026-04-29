@@ -23,8 +23,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install browser engines for Scrapling (Camoufox for stealth, Playwright as fallback)
-RUN scrapling install || true
+# Install Playwright Chromium for Crawl4AI (the primary web crawler engine).
+# Scrapling's Camoufox browser is intentionally NOT installed — scrapling
+# is imported by scripts only and its browser engine is unused in production.
 RUN playwright install chromium --with-deps || true
 
 # Copy application code

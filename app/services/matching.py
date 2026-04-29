@@ -1,32 +1,30 @@
 """
-M5 Alerting Engine — Matching Service.
+M5 Alerting Engine — Semantic Matching Service.
 
 Core function: ``match_event(event_id)``
 
-When a ChangeEvent finishes M4 scoring, this service finds every active
-UserSubscription that matches the event using a two-stage approach:
+After a ChangeEvent is scored by M3/M4, this service finds every active
+UserSubscription whose embedding is semantically close to the event's
+embedding, and inserts one Alert row per match.
 
-  Stage 1 — Deterministic metadata pre-filters (topic, countries,
-            significance score).  Extremely fast — pure SQL WHERE clauses
-            on indexed columns.
+How it works
+------------
+1. Load the ChangeEvent — skip if unscored or has no embedding.
+2. Run one SQL query: compare the event embedding against every active
+   subscription embedding using pgvector cosine distance (<=>).
+   Only subscriptions whose embedding is within (1 - similarity_threshold)
+   of the event embedding pass, PLUS the min_significance gate.
+3. For each matching subscription, find which raw keywords literally
+   appear in the document text (ILIKE) — stored as ``matched_keywords``
+   on the Alert row for UI highlighting (XAI).
+4. INSERT alert rows with ON CONFLICT DO NOTHING (idempotent on retry).
 
-  Stage 2 — PostgreSQL full-text percolation.  The user's ``keyword_query``
-            (stored as a raw ``tsquery`` string) is evaluated against the
-            full document text using ``to_tsvector() @@ to_tsquery()``.
-            This catches exact HS codes, chemical names, acronyms, and
-            any specific term buried anywhere in the document.
-
-Both stages execute in a **single SQL query** — no round-trips.  For each
-matching subscription the engine inserts one row into the ``alerts`` table
-(with ``ON CONFLICT DO NOTHING`` for idempotency).
-
-Zero LLM cost.  Zero external infrastructure.  Runs on existing Postgres.
+Zero extra LLM calls.  Runs in milliseconds at 200-user scale.
 """
 
 from __future__ import annotations
 
-import re
-from typing import Optional
+import json
 from uuid import UUID
 
 from sqlmodel import Session, text
@@ -37,80 +35,45 @@ from app.logging_setup import get_logger
 log = get_logger(__name__)
 
 
-# ── The core matching query ──────────────────────────────────────────────────
-# This single SQL statement implements Stage 1 + Stage 2 in one pass.
-#
-# Stage 1 filters:
-#   - topic overlap  (``&&`` array operator)
-#   - origin_countries overlap
-#   - destination_countries overlap
-#   - significance score threshold
-#
-# Stage 2 percolation:
-#   - full-text keyword match using ``to_tsvector @@ to_tsquery``
-#
-# NULL in any subscription column means "match any".
+# Single SQL pass: cosine distance filter + min_significance gate.
+# pgvector's <=> operator returns cosine *distance* (0 = identical, 2 = opposite).
+# We convert to similarity: similarity = 1 - distance.
+# Condition: distance < (1 - threshold)  ⟺  similarity > threshold.
 _MATCH_SQL = text("""
     SELECT
-        us.id            AS subscription_id,
+        us.id              AS subscription_id,
         us.user_email,
-        us.keyword_query
+        us.keywords,
+        1 - (us.embedding <=> CAST(:doc_embedding AS vector)) AS similarity
     FROM user_subscriptions us
     WHERE us.is_active = TRUE
-      -- Stage 1: structured metadata pre-filters
-      AND (us.topics IS NULL
-           OR us.topics && CAST(ARRAY[:event_topic] AS varchar[]))
-      AND (us.origin_countries IS NULL
-           OR :has_origins = FALSE
-           OR us.origin_countries && CAST(STRING_TO_ARRAY(:event_origins_csv, ',') AS varchar[]))
-      AND (us.destination_countries IS NULL
-           OR :has_dests = FALSE
-           OR us.destination_countries && CAST(STRING_TO_ARRAY(:event_dests_csv, ',') AS varchar[]))
-      AND (:event_score >= us.min_significance)
-      -- Stage 2: full-text keyword percolation
-      AND (us.keyword_query IS NULL
-           OR to_tsvector('english', :raw_text)
-              @@ to_tsquery('english', us.keyword_query))
+      AND us.embedding IS NOT NULL
+      AND :event_score >= us.min_significance
+      AND (us.embedding <=> CAST(:doc_embedding AS vector))
+          < (1.0 - us.similarity_threshold)
 """)
 
-# Insert an alert row; silently skip if the (sub, event) pair already exists.
 _INSERT_ALERT_SQL = text("""
     INSERT INTO alerts (id, subscription_id, change_event_id,
                         matched_keywords, status)
     VALUES (gen_random_uuid(), :sub_id, :event_id,
-            :matched_kw, 'unread')
+            CAST(:matched_kw AS json), 'unread')
     ON CONFLICT ON CONSTRAINT uq_alerts_subscription_event
     DO NOTHING
 """)
 
 
-def _extract_matched_terms(
-    keyword_query: Optional[str],
-    raw_text: str,
-) -> list[str]:
-    """
-    Best-effort extraction of which user keywords actually appear in the
-    document.  Used for XAI hit-highlighting in the UI.
+def _pgvector_literal(embedding: list[float]) -> str:
+    """Format a Python float list as a pgvector literal string '[x,y,…]'."""
+    return "[" + ",".join(f"{v:.8f}" for v in embedding) + "]"
 
-    Parses the tsquery string for literal tokens and checks if they
-    appear (case-insensitive) in the raw text.
-    """
-    if not keyword_query:
+
+def _find_matched_keywords(keywords: list, raw_text: str) -> list[str]:
+    """Return which keywords from the subscription appear in the document."""
+    if not keywords or not raw_text:
         return []
-
-    # Pull bare words from the tsquery string.
-    # "lithium & batteri:*" → ["lithium", "batteri"]
-    tokens = re.findall(r"[A-Za-z0-9][A-Za-z0-9_./-]*", keyword_query)
     text_lower = raw_text.lower()
-
-    matched = []
-    for token in tokens:
-        # Skip tsquery operators that regex might have captured.
-        if token.lower() in {"and", "or", "not"}:
-            continue
-        if token.lower() in text_lower:
-            matched.append(token)
-    return matched
+    return [kw for kw in keywords if str(kw).lower() in text_lower]
 
 
 def match_event(event_id: UUID) -> dict:
@@ -118,9 +81,8 @@ def match_event(event_id: UUID) -> dict:
     Find all active subscriptions that match the given ChangeEvent and
     insert alert rows.
 
-    Returns ``{"status": "matched", "event_id": "...", "alerts_created": N}``.
+    Returns {"status": ..., "event_id": ..., "alerts_created": N}.
     """
-    import json
     from app.models import ChangeEvent, SourceVersion
 
     with Session(engine) as session:
@@ -129,63 +91,41 @@ def match_event(event_id: UUID) -> dict:
             log.warning("match_event_not_found", event_id=str(event_id))
             return {"status": "not_found", "event_id": str(event_id)}
 
-        # Skip unscored events — M4 hasn't finished yet.
         if event.significance_score is None:
             log.info("match_event_unscored", event_id=str(event_id))
             return {"status": "unscored", "event_id": str(event_id)}
 
-        # Fetch the raw text from the source version for keyword matching.
+        if event.embedding is None:
+            log.info("match_event_no_embedding", event_id=str(event_id))
+            return {"status": "no_embedding", "event_id": str(event_id)}
+
+        # Fetch raw text for keyword XAI only — not used for matching.
         raw_text = ""
         if event.new_version_id:
             sv = session.get(SourceVersion, event.new_version_id)
             if sv and sv.raw_text:
                 raw_text = sv.raw_text
 
-        # Fall back to summary + diff if no raw text is available.
-        if not raw_text:
-            parts = []
-            if event.summary:
-                parts.append(event.summary)
-            if event.unified_diff:
-                parts.append(event.unified_diff)
-            raw_text = "\n".join(parts)
-
-        if not raw_text:
-            log.info("match_event_no_text", event_id=str(event_id))
-            return {"status": "no_text", "event_id": str(event_id)}
-
-        # ── Execute the matching query ───────────────────────────────
-        event_topic = event.topic or ""
-        event_origins = event.origin_countries or []
-        event_dests = event.destination_countries or []
-        event_score = event.significance_score or 0.0
+        doc_embedding_str = _pgvector_literal(event.embedding)
 
         rows = session.exec(
             _MATCH_SQL,
             params={
-                "event_topic": event_topic,
-                "has_origins": bool(event_origins),
-                "event_origins_csv": ",".join(event_origins) if event_origins else "",
-                "has_dests": bool(event_dests),
-                "event_dests_csv": ",".join(event_dests) if event_dests else "",
-                "event_score": event_score,
-                "raw_text": raw_text[:500_000],  # cap to prevent OOM
+                "doc_embedding": doc_embedding_str,
+                "event_score": event.significance_score,
             },
         ).all()
 
         if not rows:
             log.info("match_event_no_matches",
-                     event_id=str(event_id), score=event_score)
-            return {
-                "status": "matched",
-                "event_id": str(event_id),
-                "alerts_created": 0,
-            }
+                     event_id=str(event_id), score=event.significance_score)
+            return {"status": "matched", "event_id": str(event_id),
+                    "alerts_created": 0}
 
-        # ── Insert alert rows ────────────────────────────────────────
         alerts_created = 0
         for row in rows:
-            matched = _extract_matched_terms(row.keyword_query, raw_text)
+            keywords = row.keywords if isinstance(row.keywords, list) else []
+            matched = _find_matched_keywords(keywords, raw_text)
 
             session.exec(
                 _INSERT_ALERT_SQL,
@@ -203,8 +143,7 @@ def match_event(event_id: UUID) -> dict:
                  event_id=str(event_id),
                  candidates=len(rows),
                  alerts_created=alerts_created,
-                 score=event_score,
-                 topic=event_topic)
+                 score=event.significance_score)
 
         return {
             "status": "matched",

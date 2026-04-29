@@ -1,7 +1,7 @@
 services:
   # ── PostgreSQL 16 ──────────────────────────────────────
   db:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_DB: regwatch
       POSTGRES_USER: regwatch
@@ -66,6 +66,8 @@ services:
       DATABASE_URL: postgresql://regwatch:regwatch_secret@db:5432/regwatch
       REDIS_URL: redis://redis:6379/0
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    extra_hosts:
+      - "mock-website.local:host-gateway"
     depends_on:
       db:
         condition: service_healthy
@@ -84,6 +86,8 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       # If dof.gob.mx fails with CERTIFICATE_VERIFY_FAILED (broken server chain), set:
       # INGEST_TLS_SKIP_VERIFY_HOST_SUFFIXES: "dof.gob.mx"
+    extra_hosts:
+      - "mock-website.local:host-gateway"
     depends_on:
       db:
         condition: service_healthy
@@ -106,6 +110,24 @@ services:
         condition: service_healthy
     volumes:
       - .:/opt/app
+
+  # ── Mock Regulatory Server (simple RSS + old regulations) ─
+  mock-server:
+    build: ./mock_server
+    ports:
+      - "9000:9000"
+    volumes:
+      - ./mock_server/data:/data
+
+  # ── Mock Regulatory Website (ATCA — crawler target) ────
+  mock-website:
+    build: ./mock-website
+    ports:
+      - "3001:3001"
+    environment:
+      DATA_DIR: /data
+    volumes:
+      - ./mock-website/mock_server/data:/data
 
 volumes:
   pgdata:

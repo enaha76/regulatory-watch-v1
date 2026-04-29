@@ -130,22 +130,21 @@ class RSSConnector(IngestorBase):
                 logger.debug("Skipping empty RSS entry: %s", title)
                 continue
 
-            # Stable identity key: prefer GUID (entry.id), then link, then content.
-            # Using raw_text as the dedup key causes spurious inserts whenever the
-            # feed's summary HTML shifts (tracking params, CDATA reformat, etc.).
+            # Hash the actual content so changes are detected on re-poll.
+            # Intra-batch deduplication uses the entry key (guid/link) to
+            # avoid processing the same entry twice within one fetch cycle.
+            content_hash = _sha256(raw_text)
+
             entry_key = (
                 getattr(entry, "id", "")
                 or getattr(entry, "guid", "")
                 or link
+                or raw_text
             ).strip()
-            if entry_key:
-                content_hash = _sha256(f"{self.feed_url}||{entry_key}")
-            else:
-                content_hash = _sha256(raw_text)
 
-            if content_hash in seen_hashes:
+            if entry_key in seen_hashes:
                 continue
-            seen_hashes.add(content_hash)
+            seen_hashes.add(entry_key)
 
             documents.append(
                 RawDocument(
