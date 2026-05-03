@@ -1,0 +1,73 @@
+{
+  "slug": "notice-2026-041",
+  "category": "notices",
+  "title": "Notice 2026-041: Enhanced Documentation Requirements for Lithium Battery Imports",
+  "subtitle": "CRITICAL REGULATORY NOTICE 2026-041",
+  "effective_date": "2026-07-01",
+  "reference_number": "ATCA/BATT/2026/N01",
+  "summary": "Due to an increase in supply chain irregularities and to enforce critical infrastructure security measures, the ATCA is mandating strict new documentation requirements for all lithium-ion battery imports (specifically classified under HTS 8507.60.00).",
+  "sections": [
+    {
+      "type": "note",
+      "style": "critical",
+      "title": "Effective Date: July 1, 2026",
+      "text": "All importers must comply with the new documentation requirements outlined below."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Subject: Enhanced Documentation Requirements for Lithium Battery Imports"
+    },
+    {
+      "type": "paragraph",
+      "text": "AGENCY: ADIAS Trade & Compliance Authority (ATCA)."
+    },
+    {
+      "type": "paragraph",
+      "text": "ACTION: Final Rule and Administrative Command."
+    },
+    {
+      "type": "paragraph",
+      "text": "SUMMARY: Due to an increase in supply chain irregularities and to enforce critical infrastructure security measures, the ATCA is mandating strict new documentation requirements for all lithium-ion battery imports (specifically classified under HTS 8507.60.00)."
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "Mandatory Requirements"
+    },
+    {
+      "type": "paragraph",
+      "text": "Effective July 1, 2026, all importers processing shipments of lithium batteries with an entered aggregate value exceeding $50,000 USD must electronically transmit a 'Form 8-BAT Supply Chain Provenance Certificate' via the ACE portal before the vessel arrives at the port of entry."
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "Penalties for Non-Compliance"
+    },
+    {
+      "type": "paragraph",
+      "text": "Failure to provide this documentation by the deadline will be considered a severe violation of 19 U.S.C. § 1592. The authority will enforce:"
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "An immediate halt on the clearance of goods at the port.",
+        "A mandatory civil penalty of $25,000 per violation.",
+        "Potential suspension of the importer's continuous bond."
+      ]
+    },
+    {
+      "type": "note",
+      "style": "info",
+      "title": "Available Download",
+      "text": "Download Official Signed Notice (PDF) at /documents/lithium-battery-import-notice.pdf"
+    }
+  ],
+  "pdf": {
+    "enabled": true,
+    "filename": "lithium-battery-import-notice.pdf",
+    "document_title": "OFFICIAL IMPORT NOTICE — ATCA/BATT/2026/N01"
+  },
+  "updated_at": "2026-04-28T00:00:00Z"
+}

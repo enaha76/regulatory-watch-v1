@@ -1,24 +1,29 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig, loadEnv} from 'vite';
+import { defineConfig } from 'vite';
 
-export default defineConfig(({mode}) => {
-  const env = loadEnv(mode, '.', '');
-  return {
-    plugins: [react(), tailwindcss()],
-    define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+// The admin SPA is served by Express at /admin, so it must be built with
+// base="/admin/" and emitted into dist/admin/. In dev, /api/* requests are
+// proxied to the Express server on :3001 so the React app talks to the same
+// origin it will in production.
+export default defineConfig(() => ({
+  plugins: [react(), tailwindcss()],
+  base: '/admin/',
+  build: {
+    outDir: 'dist/admin',
+    emptyOutDir: true,
+  },
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, '.'),
     },
-    resolve: {
-      alias: {
-        '@': path.resolve(__dirname, '.'),
-      },
+  },
+  server: {
+    port: 5173,
+    proxy: {
+      '/api': 'http://localhost:3001',
     },
-    server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
-      hmr: process.env.DISABLE_HMR !== 'true',
-    },
-  };
-});
+    hmr: process.env.DISABLE_HMR !== 'true',
+  },
+}));

@@ -1,0 +1,57 @@
+{
+  "slug": "cbam-implementation-notice",
+  "category": "regulations",
+  "title": "Carbon Border Adjustment Mechanism (CBAM) Implementation",
+  "subtitle": "ATCA Regulation 2026-9A",
+  "effective_date": "2026-10-01",
+  "reference_number": "ATCA/CBAM/2026/9A",
+  "summary": "The ATCA is implementing the initial transitional phase of the Carbon Border Adjustment Mechanism (CBAM). During this phase, importers of covered goods must report the greenhouse gas emissions (GHG) embedded in their imports.",
+  "sections": [
+    {
+      "type": "paragraph",
+      "text": "Effective Date: October 1, 2026"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Covered Commodities"
+    },
+    {
+      "type": "paragraph",
+      "text": "The regulation currently applies to the following sectors:"
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "Iron and Steel (HTS Chapters 72 and 73)",
+        "Aluminum (HTS Chapter 76)",
+        "Cement (HTS 2523)",
+        "Fertilizers (HTS Chapter 31)"
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Reporting Obligations"
+    },
+    {
+      "type": "paragraph",
+      "text": "Importers must submit a quarterly CBAM declaration detailing:"
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "Total quantity of covered goods imported.",
+        "Total embedded direct and indirect emissions (metric tons CO2e).",
+        "Any carbon price paid in the country of origin."
+      ]
+    },
+    {
+      "type": "paragraph",
+      "text": "The first quarterly report (for Q4 2026) is due by January 31, 2027. Failure to report may result in a penalty of $50 to $150 per tonne of unreported emissions."
+    }
+  ],
+  "updated_at": "2026-04-25T00:00:00Z"
+}

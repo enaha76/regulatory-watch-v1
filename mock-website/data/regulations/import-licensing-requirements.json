@@ -1,0 +1,44 @@
+{
+  "slug": "import-licensing-requirements",
+  "category": "regulations",
+  "title": "Import Licensing Requirements & Deadlines",
+  "subtitle": "CFR Title 15, Parts 730-774",
+  "effective_date": "2026-01-01",
+  "reference_number": "ATCA/Directive/44-B",
+  "summary": "Pursuant to ATCA Directive 44-B, specific commodities require strict import licensing before goods may be entered into the commerce space.",
+  "sections": [
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Compliance Deadlines for 2026"
+    },
+    {
+      "type": "list",
+      "ordered": false,
+      "items": [
+        "Steel and Aluminum (Section 232): License applications must be filed at least 15 days prior to vessel departure.",
+        "Controlled Chemicals (EAR99/ECCN 1C350): End-user certification must be validated by September 30, 2026.",
+        "Agricultural Quotas: Tariff-rate quota (TRQ) licenses for dairy products renew on November 15, 2026."
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Penalties for Non-Compliance"
+    },
+    {
+      "type": "paragraph",
+      "text": "Failure to present a valid ATCA import license at the time of entry summary (CBP Form 7501) shall result in:"
+    },
+    {
+      "type": "list",
+      "ordered": true,
+      "items": [
+        "Immediate detention of merchandise.",
+        "Liquidated damages equal to three times the value of the merchandise.",
+        "Civil penalties up to $50,000 per missing document under 19 U.S.C. § 1592."
+      ]
+    }
+  ],
+  "updated_at": "2026-01-01T00:00:00Z"
+}

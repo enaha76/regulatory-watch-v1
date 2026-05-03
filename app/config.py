@@ -131,6 +131,12 @@ class Settings(BaseSettings):
     # Max chars of extracted text per page before truncation.
     CRAWL_MAX_TEXT_CHARS: int = Field(default=500_000, ge=1000)
 
+    # ── Admin trigger-crawl (mock-website target) ─────────
+    # Used by POST /api/admin/trigger-crawl so the admin UI can kick a crawl
+    # against the local mock website without registering a domain.
+    MOCK_WEBSITE_URL: str = "http://mock-website:3001"
+    MOCK_WEBSITE_DOMAIN: str = "mock-website"
+
     # ── AWS S3 (artifact storage — optional) ─────────────
     AWS_S3_BUCKET: str = ""
     AWS_REGION: str = "us-east-1"
