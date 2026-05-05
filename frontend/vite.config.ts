@@ -20,6 +20,10 @@ export default defineConfig({
         target: process.env.VITE_API_BASE || "http://localhost:8001",
         changeOrigin: true,
       },
+      "/health": {
+        target: process.env.VITE_API_BASE || "http://localhost:8001",
+        changeOrigin: true,
+      },
     },
   },
 });

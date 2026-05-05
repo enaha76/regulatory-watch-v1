@@ -29,6 +29,38 @@ export interface AlertDetail extends Alert {
   pdfUrl?: string;
   /** Document-level diff. Present on detail responses only. */
   diff?: AlertDiff | null;
+  /**
+   * Compliance obligations the LLM extracted for this regulation —
+   * who must do what, by when, with what penalty. Empty array if
+   * obligation-extraction hasn't run for this event yet.
+   */
+  obligations?: Obligation[];
+}
+
+export type ObligationType =
+  | "reporting"
+  | "prohibition"
+  | "threshold"
+  | "disclosure"
+  | "registration"
+  | "penalty"
+  | "other";
+
+export interface Obligation {
+  id: string;
+  type: ObligationType | string;
+  /** Who has to act — e.g. "importers of lithium-ion batteries". */
+  actor: string;
+  /** What they must do — the imperative verb phrase. */
+  action: string;
+  /** Optional precondition that triggers the obligation. */
+  condition: string | null;
+  /** Free-text deadline as written ("by July 1, 2026"). */
+  deadlineText: string | null;
+  /** Resolved ISO date when the LLM was able to parse one. */
+  deadlineDate: string | null;
+  /** What happens on non-compliance. */
+  penalty: string | null;
 }
 
 /**

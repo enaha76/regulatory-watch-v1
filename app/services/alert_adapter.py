@@ -29,6 +29,7 @@ from app.models import (
     ChangeEvent,
     ChangeEventEntity,
     Entity,
+    Obligation,
     SourceVersion,
 )
 
@@ -636,4 +637,44 @@ def build_frontend_alert(
                 else None
             ),
         }
+
+        # Compliance obligations extracted by the LLM (M4 phase 3).
+        # Sorted by upcoming deadline first, then by extraction order.
+        # Returns [] if extraction hasn't run yet — the UI handles
+        # "no obligations" gracefully.
+        payload["obligations"] = fetch_obligations(session, event.id)
     return payload
+
+
+def fetch_obligations(session: Session, change_event_id) -> list[dict]:
+    """
+    Look up structured compliance obligations attached to a ChangeEvent.
+
+    Each row was extracted by the LLM and tells the user *who* must do
+    *what*, by *when*, with what *penalty* on miss. The frontend renders
+    these as cards in the alert detail page.
+    """
+    from sqlmodel import select as _select
+
+    rows = session.exec(
+        _select(Obligation)
+        .where(Obligation.change_event_id == change_event_id)
+        .order_by(Obligation.deadline_date.asc().nulls_last(),  # type: ignore[attr-defined]
+                  Obligation.extracted_at.asc())
+    ).all()
+
+    return [
+        {
+            "id": str(o.id),
+            "type": o.obligation_type,
+            "actor": o.actor,
+            "action": o.action,
+            "condition": o.condition,
+            "deadlineText": o.deadline_text,
+            "deadlineDate": (
+                o.deadline_date.isoformat() if o.deadline_date else None
+            ),
+            "penalty": o.penalty,
+        }
+        for o in rows
+    ]

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router";
 import {
   AlertDetail as ApiAlertDetail,
   AlertDiff,
+  Obligation,
   getAlert,
 } from "@/api/alerts";
 import { Button } from "@/app/components/ui/button";
@@ -27,6 +28,10 @@ import {
   CheckCircle2,
   Info,
   GitCompare,
+  ListChecks,
+  AlertTriangle,
+  Clock,
+  Users,
 } from "lucide-react";
 import { IN, CN, EU, US } from "country-flag-icons/react/3x2";
 
@@ -144,6 +149,179 @@ const mockAlerts: Alert[] = [
 // source. Designed to be informative without overwhelming: cosmetic
 // edits get a muted strip, substantive changes get full color.
 // ─────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────
+// Obligations section — surfaces the structured "who must do what by
+// when" rows the LLM extracted for this regulation. Designed to be
+// scannable: type badge on the left, deadline pinned to the right.
+// ─────────────────────────────────────────────────────────────────────
+
+const OBLIGATION_TYPE_LABEL: Record<string, string> = {
+  reporting: "Reporting",
+  prohibition: "Prohibition",
+  threshold: "Threshold",
+  disclosure: "Disclosure",
+  registration: "Registration",
+  penalty: "Penalty",
+  other: "Action",
+};
+
+const OBLIGATION_TYPE_TONE: Record<string, string> = {
+  reporting: "bg-primary/10 text-primary border-primary/20",
+  prohibition: "bg-destructive/10 text-destructive border-destructive/20",
+  threshold: "bg-amber-500/10 text-amber-700 border-amber-500/30",
+  disclosure: "bg-primary/10 text-primary border-primary/20",
+  registration: "bg-emerald-500/10 text-emerald-700 border-emerald-500/30",
+  penalty: "bg-destructive/10 text-destructive border-destructive/20",
+  other: "bg-muted text-muted-foreground border-border",
+};
+
+function isOverdue(iso: string): boolean {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return false;
+  return d.getTime() < Date.now();
+}
+
+function daysUntil(iso: string): number | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+}
+
+function ObligationsSection({ obligations }: { obligations: Obligation[] }) {
+  // Group: overdue + soon (within 30 days) bubble to the top of the
+  // user's attention, followed by everything else.
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-3">
+        <ListChecks className="size-5 text-muted-foreground" />
+        <h3 className="font-semibold text-lg">Compliance Obligations</h3>
+        <Badge variant="outline" className="ml-1">
+          {obligations.length}
+        </Badge>
+      </div>
+      <div className="space-y-3">
+        {obligations.map((o) => (
+          <ObligationCard key={o.id} obligation={o} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ObligationCard({ obligation: o }: { obligation: Obligation }) {
+  const typeLabel = OBLIGATION_TYPE_LABEL[o.type] ?? "Action";
+  const typeTone =
+    OBLIGATION_TYPE_TONE[o.type] ??
+    "bg-muted text-muted-foreground border-border";
+
+  const deadlineMeta = (() => {
+    if (!o.deadlineDate && !o.deadlineText) return null;
+    if (!o.deadlineDate) {
+      return { text: o.deadlineText || "", overdue: false, soon: false };
+    }
+    const overdue = isOverdue(o.deadlineDate);
+    const days = daysUntil(o.deadlineDate);
+    const soon = days !== null && days >= 0 && days <= 30;
+    const formatted = new Date(o.deadlineDate).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+    return {
+      text: formatted,
+      overdue,
+      soon,
+      days,
+    };
+  })();
+
+  return (
+    <div className="rounded-md border bg-card p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1 min-w-0 space-y-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge
+              variant="outline"
+              className={`${typeTone} uppercase tracking-wider`}
+              style={{ fontSize: "var(--text-xs)" }}
+            >
+              {typeLabel}
+            </Badge>
+            <span
+              className="text-muted-foreground flex items-center gap-1"
+              style={{ fontSize: "var(--text-xs)" }}
+            >
+              <Users className="size-3" />
+              {o.actor}
+            </span>
+          </div>
+          <p className="leading-relaxed">{o.action}</p>
+          {o.condition && (
+            <p
+              className="text-muted-foreground"
+              style={{ fontSize: "var(--text-sm)" }}
+            >
+              <span style={{ fontWeight: "var(--font-weight-medium)" }}>
+                If:
+              </span>{" "}
+              {o.condition}
+            </p>
+          )}
+          {o.penalty && (
+            <p
+              className="flex items-start gap-1.5"
+              style={{ fontSize: "var(--text-sm)" }}
+            >
+              <AlertTriangle className="size-4 text-destructive shrink-0 mt-0.5" />
+              <span>
+                <span
+                  className="text-destructive"
+                  style={{ fontWeight: "var(--font-weight-medium)" }}
+                >
+                  Penalty:
+                </span>{" "}
+                <span className="text-muted-foreground">{o.penalty}</span>
+              </span>
+            </p>
+          )}
+        </div>
+        {deadlineMeta && (
+          <div className="text-right shrink-0">
+            <div
+              className={`flex items-center gap-1 justify-end ${
+                deadlineMeta.overdue
+                  ? "text-destructive"
+                  : deadlineMeta.soon
+                    ? "text-amber-700"
+                    : "text-muted-foreground"
+              }`}
+              style={{ fontSize: "var(--text-xs)" }}
+            >
+              <Clock className="size-3" />
+              <span style={{ fontWeight: "var(--font-weight-medium)" }}>
+                {deadlineMeta.overdue
+                  ? "Overdue"
+                  : deadlineMeta.soon && deadlineMeta.days !== undefined
+                    ? `In ${deadlineMeta.days} day${deadlineMeta.days === 1 ? "" : "s"}`
+                    : "Deadline"}
+              </span>
+            </div>
+            <p
+              className="tabular-nums"
+              style={{
+                fontSize: "var(--text-sm)",
+                fontWeight: "var(--font-weight-medium)",
+              }}
+            >
+              {deadlineMeta.text}
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 const CHANGE_TYPE_LABEL: Record<string, string> = {
   typo_or_cosmetic: "Cosmetic edit",
@@ -660,6 +838,10 @@ export function AlertDetail() {
               ))}
             </div>
           </div>
+
+          {alert.obligations && alert.obligations.length > 0 && (
+            <ObligationsSection obligations={alert.obligations} />
+          )}
 
           {alert.diff && <DiffSection diff={alert.diff} />}
 

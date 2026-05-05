@@ -19,6 +19,7 @@ import {
   NotificationsProvider,
   useNotifications,
 } from "@/app/notifications";
+import { SystemHealthIndicator } from "@/app/components/system-health";
 import logoIcon from "@/assets/logo-icon.jpeg";
 
 // The provider has to live inside a router context (because its toast
@@ -171,9 +172,10 @@ function RootInner() {
       <SidebarInset>
         <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-card px-4">
           <SidebarTrigger />
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-1">
             <h2>{getHeaderTitle()}</h2>
           </div>
+          <SystemHealthIndicator />
         </header>
         <div className="flex-1 overflow-auto p-6">
           <Outlet />

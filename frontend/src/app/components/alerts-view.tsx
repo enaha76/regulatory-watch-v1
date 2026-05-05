@@ -29,9 +29,19 @@ import {
   Clock,
   Check,
   Undo2,
+  Filter as FilterIcon,
+  X,
 } from "lucide-react";
 import { Progress } from "@/app/components/ui/progress";
 import { Switch } from "@/app/components/ui/switch";
+import { Checkbox } from "@/app/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/app/components/ui/select";
 import { IN, CN, EU, US } from "country-flag-icons/react/3x2";
 
 // Alert shape comes from the API client. Keep the alias for readability —
@@ -319,6 +329,39 @@ export function AlertsView() {
   // status="new". Lets the user revisit alerts they've already seen
   // without going to the Archive page (those are explicitly dismissed).
   const [includeRead, setIncludeRead] = useState(false);
+  // Filter + Sort state. Filters are inclusion sets — empty = no
+  // restriction. Sort mode controls the ordering applied AFTER the
+  // pinned-first preference.
+  type SortMode = "newest" | "oldest" | "relevance-high" | "relevance-low";
+  const [sortMode, setSortMode] = useState<SortMode>("newest");
+  const [filterCountries, setFilterCountries] = useState<Set<string>>(
+    new Set(),
+  );
+  const [filterTypes, setFilterTypes] = useState<Set<string>>(new Set());
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  const filterButtonRef = useRef<HTMLButtonElement | null>(null);
+  const filterPanelRef = useRef<HTMLDivElement | null>(null);
+
+  // Click-outside to close the filter panel.
+  useEffect(() => {
+    if (!filterPanelOpen) return;
+    const onPointer = (e: MouseEvent | TouchEvent) => {
+      const t = e.target as Node | null;
+      if (
+        filterPanelRef.current?.contains(t) ||
+        filterButtonRef.current?.contains(t)
+      ) {
+        return;
+      }
+      setFilterPanelOpen(false);
+    };
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("touchstart", onPointer);
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("touchstart", onPointer);
+    };
+  }, [filterPanelOpen]);
   // Mirror in a ref so the count-up watcher can read the latest value
   // without re-creating its closure each render.
   const includeReadRef = useRef(includeRead);
@@ -524,19 +567,69 @@ export function AlertsView() {
     return flagMap[country] || "🌐";
   };
 
-  const filteredAlerts = alerts.filter((alert) => {
+  // Distinct countries and regulation types in the currently-loaded
+  // alerts — drives the Filter popover's checkbox lists. Recomputing
+  // each render is cheap for ≤200 alerts.
+  const uniqueCountries = Array.from(
+    new Set(alerts.map((a) => a.country).filter(Boolean)),
+  ).sort();
+  const uniqueTypes = Array.from(
+    new Set(alerts.map((a) => a.regulationType).filter(Boolean)),
+  ).sort();
+
+  const activeFilterCount = filterCountries.size + filterTypes.size;
+
+  const filteredAlerts = (() => {
     const query = searchQuery.toLowerCase();
-    return (
-      alert.title.toLowerCase().includes(query) ||
-      alert.country.toLowerCase().includes(query) ||
-      alert.authority.toLowerCase().includes(query) ||
-      alert.regulationType.toLowerCase().includes(query) ||
-      alert.affectedProducts.some((product) =>
-        product.toLowerCase().includes(query),
-      ) ||
-      alert.id.toLowerCase().includes(query)
-    );
-  });
+    let list = alerts.filter((alert) => {
+      // Search across the indexed text fields.
+      const matchesQuery =
+        query === "" ||
+        alert.title.toLowerCase().includes(query) ||
+        alert.country.toLowerCase().includes(query) ||
+        alert.authority.toLowerCase().includes(query) ||
+        alert.regulationType.toLowerCase().includes(query) ||
+        alert.affectedProducts.some((p) =>
+          p.toLowerCase().includes(query),
+        ) ||
+        alert.id.toLowerCase().includes(query);
+
+      // Inclusion filters — empty set = no restriction. Multiple
+      // selections within a category are OR'd; across categories
+      // they're AND'd.
+      const matchesCountry =
+        filterCountries.size === 0 || filterCountries.has(alert.country);
+      const matchesType =
+        filterTypes.size === 0 || filterTypes.has(alert.regulationType);
+
+      return matchesQuery && matchesCountry && matchesType;
+    });
+
+    // Sort: pinned first, then per the user's chosen mode. Falls back
+    // to relevance for ties on date sorts.
+    return [...list].sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      switch (sortMode) {
+        case "newest":
+          if (a.publicationDate && b.publicationDate &&
+              a.publicationDate !== b.publicationDate) {
+            return b.publicationDate.localeCompare(a.publicationDate);
+          }
+          return b.relevanceScore - a.relevanceScore;
+        case "oldest":
+          if (a.publicationDate && b.publicationDate &&
+              a.publicationDate !== b.publicationDate) {
+            return a.publicationDate.localeCompare(b.publicationDate);
+          }
+          return b.relevanceScore - a.relevanceScore;
+        case "relevance-high":
+          return b.relevanceScore - a.relevanceScore;
+        case "relevance-low":
+          return a.relevanceScore - b.relevanceScore;
+      }
+    });
+  })();
 
   if (loading) {
     return (
@@ -576,8 +669,158 @@ export function AlertsView() {
                 Include read
               </span>
             </label>
-            <Button variant="outline">Filter</Button>
-            <Button variant="outline">Sort</Button>
+
+            {/* Filter — popover with country + type checklists ────── */}
+            <div className="relative">
+              <Button
+                ref={filterButtonRef}
+                variant={activeFilterCount > 0 ? "default" : "outline"}
+                onClick={() => setFilterPanelOpen((v) => !v)}
+                aria-expanded={filterPanelOpen}
+                aria-haspopup="dialog"
+                className="gap-2"
+              >
+                <FilterIcon className="size-4" />
+                Filter
+                {activeFilterCount > 0 && (
+                  <Badge
+                    variant="secondary"
+                    className="bg-primary-foreground text-primary px-1.5"
+                  >
+                    {activeFilterCount}
+                  </Badge>
+                )}
+              </Button>
+              {filterPanelOpen && (
+                <div
+                  ref={filterPanelRef}
+                  role="dialog"
+                  aria-label="Filter alerts"
+                  className="absolute right-0 top-full mt-2 z-30 w-80 rounded-md border bg-card shadow-lg"
+                >
+                  <div className="px-4 py-3 flex items-center justify-between border-b">
+                    <p
+                      style={{
+                        fontWeight: "var(--font-weight-medium)",
+                      }}
+                    >
+                      Filters
+                    </p>
+                    {activeFilterCount > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setFilterCountries(new Set());
+                          setFilterTypes(new Set());
+                        }}
+                      >
+                        Clear all
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="max-h-96 overflow-y-auto">
+                    {uniqueCountries.length > 0 && (
+                      <div className="px-4 py-3 border-b">
+                        <p
+                          className="text-muted-foreground mb-2 uppercase tracking-wider"
+                          style={{
+                            fontSize: "var(--text-xs)",
+                            fontWeight: "var(--font-weight-medium)",
+                          }}
+                        >
+                          Country
+                        </p>
+                        <div className="space-y-1.5">
+                          {uniqueCountries.map((c) => (
+                            <label
+                              key={c}
+                              className="flex items-center gap-2 cursor-pointer hover:bg-muted/40 rounded px-2 py-1 -mx-2"
+                            >
+                              <Checkbox
+                                checked={filterCountries.has(c)}
+                                onCheckedChange={(checked) => {
+                                  setFilterCountries((prev) => {
+                                    const next = new Set(prev);
+                                    if (checked) next.add(c);
+                                    else next.delete(c);
+                                    return next;
+                                  });
+                                }}
+                              />
+                              <span
+                                style={{ fontSize: "var(--text-sm)" }}
+                              >
+                                {c}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {uniqueTypes.length > 0 && (
+                      <div className="px-4 py-3">
+                        <p
+                          className="text-muted-foreground mb-2 uppercase tracking-wider"
+                          style={{
+                            fontSize: "var(--text-xs)",
+                            fontWeight: "var(--font-weight-medium)",
+                          }}
+                        >
+                          Regulation Type
+                        </p>
+                        <div className="space-y-1.5">
+                          {uniqueTypes.map((t) => (
+                            <label
+                              key={t}
+                              className="flex items-center gap-2 cursor-pointer hover:bg-muted/40 rounded px-2 py-1 -mx-2"
+                            >
+                              <Checkbox
+                                checked={filterTypes.has(t)}
+                                onCheckedChange={(checked) => {
+                                  setFilterTypes((prev) => {
+                                    const next = new Set(prev);
+                                    if (checked) next.add(t);
+                                    else next.delete(t);
+                                    return next;
+                                  });
+                                }}
+                              />
+                              <span
+                                style={{ fontSize: "var(--text-sm)" }}
+                              >
+                                {t}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Sort dropdown ────────────────────────────────────── */}
+            <Select
+              value={sortMode}
+              onValueChange={(v) => setSortMode(v as SortMode)}
+            >
+              <SelectTrigger
+                className="w-[180px]"
+                aria-label="Sort alerts"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="newest">Newest first</SelectItem>
+                <SelectItem value="oldest">Oldest first</SelectItem>
+                <SelectItem value="relevance-high">Highest relevance</SelectItem>
+                <SelectItem value="relevance-low">Lowest relevance</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
