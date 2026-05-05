@@ -39,11 +39,18 @@ log = get_logger(__name__)
 # pgvector's <=> operator returns cosine *distance* (0 = identical, 2 = opposite).
 # We convert to similarity: similarity = 1 - distance.
 # Condition: distance < (1 - threshold)  ⟺  similarity > threshold.
+#
+# `hs_codes` and `countries` (added in migration 013) are pulled here but
+# applied as Python pre-filters below. They could be pushed into SQL using
+# json_array_elements but the candidate count after the embedding filter
+# is already small (typically <200), so Python is simpler and fast enough.
 _MATCH_SQL = text("""
     SELECT
         us.id              AS subscription_id,
         us.user_email,
         us.keywords,
+        us.hs_codes,
+        us.countries,
         1 - (us.embedding <=> CAST(:doc_embedding AS vector)) AS similarity
     FROM user_subscriptions us
     WHERE us.is_active = TRUE
@@ -51,6 +58,15 @@ _MATCH_SQL = text("""
       AND :event_score >= us.min_significance
       AND (us.embedding <=> CAST(:doc_embedding AS vector))
           < (1.0 - us.similarity_threshold)
+""")
+
+
+_EVENT_HS_CODES_SQL = text("""
+    SELECT e.canonical_key
+    FROM change_event_entities cee
+    JOIN entities e ON e.id = cee.entity_id
+    WHERE cee.change_event_id = :event_id
+      AND e.entity_type = 'code'
 """)
 
 _INSERT_ALERT_SQL = text("""
@@ -74,6 +90,47 @@ def _find_matched_keywords(keywords: list, raw_text: str) -> list[str]:
         return []
     text_lower = raw_text.lower()
     return [kw for kw in keywords if str(kw).lower() in text_lower]
+
+
+def _hs_overlap(sub_codes: list, event_codes: set[str]) -> bool:
+    """
+    Return True if any subscription HS code overlaps with the event's codes.
+
+    Uses prefix matching so picking a parent code (e.g. "84") includes any
+    child line (e.g. "8471", "847130"). Stripping non-digits first keeps
+    formats consistent ("8541.40" matches "854140").
+    """
+    if not sub_codes:
+        return True  # no filter set → pass
+
+    def _normalize(code: str) -> str:
+        return "".join(c for c in (code or "") if c.isalnum())
+
+    norm_event = {_normalize(c) for c in event_codes if c}
+    norm_event.discard("")
+    if not norm_event:
+        return False  # event has no codes; subscription requires some → no match
+
+    for sc in sub_codes:
+        s = _normalize(str(sc))
+        if not s:
+            continue
+        # Match if a subscription code is a prefix of any event code, or
+        # an event code is a prefix of the subscription code (in case the
+        # event tagged a broader heading).
+        for ec in norm_event:
+            if ec.startswith(s) or s.startswith(ec):
+                return True
+    return False
+
+
+def _country_overlap(sub_countries: list, event_countries: set[str]) -> bool:
+    """True if any subscription country appears in the event's countries."""
+    if not sub_countries:
+        return True
+    norm_sub = {str(c).upper() for c in sub_countries if c}
+    norm_event = {str(c).upper() for c in event_countries if c}
+    return bool(norm_sub & norm_event)
 
 
 def match_event(event_id: UUID) -> dict:
@@ -106,6 +163,17 @@ def match_event(event_id: UUID) -> dict:
             if sv and sv.raw_text:
                 raw_text = sv.raw_text
 
+        # Pre-compute the event's HS codes + country set so we can run the
+        # strict pre-filters cheaply per candidate subscription below.
+        event_hs_codes: set[str] = set()
+        for r in session.exec(_EVENT_HS_CODES_SQL, params={"event_id": event_id}).all():
+            ck = r.canonical_key if hasattr(r, "canonical_key") else r[0]
+            if ck:
+                event_hs_codes.add(str(ck))
+        event_countries: set[str] = set(event.origin_countries or []) | set(
+            event.destination_countries or []
+        )
+
         doc_embedding_str = _pgvector_literal(event.embedding)
 
         rows = session.exec(
@@ -123,8 +191,22 @@ def match_event(event_id: UUID) -> dict:
                     "alerts_created": 0}
 
         alerts_created = 0
+        skipped_hs = 0
+        skipped_country = 0
         for row in rows:
             keywords = row.keywords if isinstance(row.keywords, list) else []
+            sub_hs = row.hs_codes if isinstance(row.hs_codes, list) else []
+            sub_countries = row.countries if isinstance(row.countries, list) else []
+
+            # Strict pre-filters: HS code + country must overlap with the
+            # event when the user has set them. Empty list = pass-through.
+            if not _hs_overlap(sub_hs, event_hs_codes):
+                skipped_hs += 1
+                continue
+            if not _country_overlap(sub_countries, event_countries):
+                skipped_country += 1
+                continue
+
             matched = _find_matched_keywords(keywords, raw_text)
 
             session.exec(
@@ -143,6 +225,8 @@ def match_event(event_id: UUID) -> dict:
                  event_id=str(event_id),
                  candidates=len(rows),
                  alerts_created=alerts_created,
+                 skipped_hs=skipped_hs,
+                 skipped_country=skipped_country,
                  score=event.significance_score)
 
         return {

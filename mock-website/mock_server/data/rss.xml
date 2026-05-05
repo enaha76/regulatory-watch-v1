@@ -9,7 +9,7 @@
       <title>Carbon Border Adjustment Mechanism (CBAM) Implementation</title>
       <link>http://localhost:3001/regulations/cbam-implementation-notice.html</link>
       <category>regulations</category>
-      <pubDate>2026-04-25T00:00:00Z</pubDate>
+      <pubDate>2026-05-05T14:07:18.613Z</pubDate>
       <description><![CDATA[The ATCA is implementing the initial transitional phase of the Carbon Border Adjustment Mechanism (CBAM). During this phase, importers of covered goods must report the greenhouse gas emissions (GHG) embedded in their imports.]]></description>
     </item>
 
@@ -22,18 +22,10 @@
     </item>
 
     <item>
-      <title>My Test Rule</title>
-      <link>http://localhost:3001/regulations/my-test-rule.html</link>
-      <category>regulations</category>
-      <pubDate>2026-05-03T15:10:47.350Z</pubDate>
-      <description><![CDATA[Just testing the create endpoint.]]></description>
-    </item>
-
-    <item>
       <title>Harmonized Tariff Schedule - 2026</title>
       <link>http://localhost:3001/regulations/tariff-schedule-2026.html</link>
       <category>regulations</category>
-      <pubDate>2026-01-01T00:00:00Z</pubDate>
+      <pubDate>2026-05-05T15:42:42.801Z</pubDate>
       <description><![CDATA[The following table outlines the current tariff classifications and duty rates administered by the Authority for select chapters. These rates are effective as of January 1, 2026, unless otherwise noted.]]></description>
     </item>
 

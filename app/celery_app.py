@@ -106,6 +106,14 @@ celery.conf.beat_schedule = {
             "title": "US Code, Title 5 — Government Organization and Employees",
         },
     },
+    # User-managed sources: every 5 min, scan `domains` for ones whose last
+    # crawl is older than their per-source `crawl_interval_seconds` (or the
+    # platform default if NULL). See app/services/frequency.py and the
+    # `crawl_due_domains` task below.
+    "crawl-due-domains-every-5min": {
+        "task": "app.celery_app.crawl_due_domains",
+        "schedule": 300.0,
+    },
 }
 
 
@@ -137,6 +145,85 @@ def heartbeat():
 
     logger.info("heartbeat", **status)
     return status
+
+
+# ── User-managed source scheduler ─────────────────────────────────────────────
+@celery.task(name="app.celery_app.crawl_due_domains")
+def crawl_due_domains():
+    """
+    Find every active domain whose last fetch_run is older than its
+    per-source crawl interval (or the platform default if NULL) and
+    enqueue a `web_crawl_task` for it.
+
+    This is the single beat task that powers the Add-Source UI's
+    frequency picker. The hardcoded scheduled crawls (EUR-Lex, FCA, …)
+    in this file run independently — this task only handles domains
+    inserted via /api/v2/sources.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from sqlmodel import Session, select
+
+    from app.database import engine
+    from app.models import Domain
+    from app.services.frequency import effective_interval
+
+    log = logger.bind(task="crawl_due_domains")
+    enqueued = 0
+    skipped = 0
+    now = datetime.now(timezone.utc)
+
+    with Session(engine) as session:
+        stmt = select(Domain).where(Domain.status == "active")
+
+        for domain in session.exec(stmt).all():
+            interval = effective_interval(domain.crawl_interval_seconds)
+            last = domain.last_crawled_at
+            due = last is None or (now - last) >= timedelta(seconds=interval)
+
+            if not due:
+                skipped += 1
+                # Per-domain debug log — makes it easy to answer
+                # "why didn't X crawl yet?" without poking at the DB.
+                log.debug(
+                    "crawl_due_skip",
+                    domain=domain.domain,
+                    last_crawled_at=last.isoformat() if last else None,
+                    interval_seconds=interval,
+                )
+                continue
+
+            seed_urls = list(domain.seed_urls or [])
+            if not seed_urls:
+                seed_urls = [f"https://{domain.domain}"]
+
+            try:
+                web_crawl_task.delay(
+                    seed_urls=seed_urls,
+                    allowed_domain=domain.domain,
+                    rate_limit_rps=max(0.5, domain.rate_limit_rps),
+                    # max_pages on the Domain row overrides the platform
+                    # default. None → web_crawl_task falls back to the
+                    # default itself.
+                    max_pages=domain.max_pages,
+                )
+                enqueued += 1
+                log.info(
+                    "crawl_due_enqueued",
+                    domain=domain.domain,
+                    interval_seconds=interval,
+                    max_pages=domain.max_pages,
+                    last_crawled_at=last.isoformat() if last else "never",
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "crawl_due_enqueue_failed",
+                    domain=domain.domain,
+                    error=str(exc),
+                )
+
+    log.info("crawl_due_domains_done", enqueued=enqueued, skipped=skipped)
+    return {"enqueued": enqueued, "skipped": skipped}
 
 
 # ── Ingestion tasks ──────────────────────────────────────────────────────────
@@ -376,13 +463,102 @@ def web_crawl_task(
 ):
     """T2.2 — Run WebConnector for a domain and persist results."""
     import asyncio
+    from datetime import datetime, timezone
 
+    from sqlmodel import Session, select
+
+    from app.database import engine
     from app.ingestion.storage import upsert_documents
     from app.ingestion.web_connector import WebConnector
+    from app.models import Domain, FetchRun
 
     s = get_settings()
     log = logger.bind(task="web_crawl", domain=allowed_domain, seeds=seed_urls)
     log.info("starting")
+
+    # ── Open a FetchRun row + stamp Domain.last_crawled_at ───────────
+    # `last_crawled_at` is what `crawl_due_domains` reads to decide
+    # whether to re-enqueue. The FetchRun row is the per-crawl history
+    # entry the SourcesView reads ("last activity", "fetched count").
+    #
+    # Hardcoded beat entries may pass an `allowed_domain` that isn't
+    # registered as a Domain row — in that case we simply don't write
+    # a FetchRun and the crawl proceeds normally.
+    fetch_run_id = None
+    try:
+        with Session(engine) as ssn:
+            d = ssn.exec(
+                select(Domain).where(Domain.domain == allowed_domain)
+            ).first()
+            if d is not None:
+                d.last_crawled_at = datetime.now(timezone.utc)
+                ssn.add(d)
+                fr = FetchRun(
+                    domain_id=d.id,
+                    status="running",
+                    started_at=datetime.now(timezone.utc),
+                )
+                ssn.add(fr)
+                ssn.commit()
+                ssn.refresh(fr)
+                fetch_run_id = fr.id
+    except Exception as exc:  # noqa: BLE001 — never let bookkeeping fail the crawl
+        log.warning("fetch_run_open_failed",
+                    error=str(exc), error_type=type(exc).__name__)
+
+    def _close_fetch_run(status: str, fetched: int = 0, changed: int = 0) -> None:
+        """Mark the FetchRun finished. No-op if the row was never created."""
+        if fetch_run_id is None:
+            return
+        try:
+            with Session(engine) as ssn:
+                fr = ssn.get(FetchRun, fetch_run_id)
+                if fr is None:
+                    return
+                fr.status = status
+                fr.finished_at = datetime.now(timezone.utc)
+                fr.fetched_count = fetched
+                fr.changed_count = changed
+                ssn.add(fr)
+                ssn.commit()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("fetch_run_close_failed",
+                        status=status,
+                        error=str(exc),
+                        error_type=type(exc).__name__)
+
+    # Live progress buffer surfaced via self.update_state. The frontend
+    # polls /api/admin/task/{id}, sees state="PROGRESS" + meta.events, and
+    # renders the events as a "thinking" log next to the spinner.
+    import time as _time
+
+    progress_events: list[dict] = []
+
+    def _push_progress(meta: dict) -> None:
+        # Each event already has {"event": str, ...}. Append a wall-clock
+        # timestamp so the UI can render relative times if it wants.
+        record = {"ts": _time.time(), **meta}
+        progress_events.append(record)
+        # Keep the buffer bounded so a 1000-page crawl doesn't blow up
+        # Redis. The UI gets the most-recent slice.
+        if len(progress_events) > 200:
+            del progress_events[: len(progress_events) - 200]
+        try:
+            self.update_state(
+                state="PROGRESS",
+                meta={
+                    "phase": meta.get("event", "running"),
+                    "events": progress_events[-50:],
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            # Never let result-backend hiccups derail the crawl.
+            log.warning(
+                "update_state_failed",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+
     try:
         connector = WebConnector(
             seed_urls=seed_urls,
@@ -393,11 +569,64 @@ def web_crawl_task(
             allowed_path_prefix=allowed_path_prefix,
             max_pdfs=max_pdfs if max_pdfs is not None else s.CRAWL_DEFAULT_MAX_PDFS,
             max_xmls=max_xmls if max_xmls is not None else s.CRAWL_DEFAULT_MAX_XMLS,
+            on_progress=_push_progress,
         )
-        docs = asyncio.run(connector.fetch())
+
+        # Crawl4AI's BestFirstCrawlingStrategy fetches many pages inside a
+        # single black-box ``arun()`` call — our per-page progress hooks
+        # only fire AFTER that call returns. To keep the UI alive during
+        # those long silent stretches we run a parallel heartbeat task
+        # that emits "still working" events every few seconds.
+        async def _run_with_heartbeat():
+            async def _heartbeat() -> None:
+                elapsed = 0
+                while True:
+                    await asyncio.sleep(5)
+                    elapsed += 5
+                    _push_progress({
+                        "event": "heartbeat",
+                        "elapsed_sec": elapsed,
+                    })
+
+            fetch_task = asyncio.create_task(connector.fetch())
+            hb_task = asyncio.create_task(_heartbeat())
+            try:
+                return await fetch_task
+            finally:
+                hb_task.cancel()
+                # Swallow CancelledError — the heartbeat is meant to be
+                # cancelled; anything else we just log and continue.
+                try:
+                    await hb_task
+                except asyncio.CancelledError:
+                    pass
+                except Exception as exc:  # noqa: BLE001
+                    log.warning(
+                        "heartbeat_task_error",
+                        error=str(exc),
+                        error_type=type(exc).__name__,
+                    )
+
+        docs = asyncio.run(_run_with_heartbeat())
+        # Surface the persistence step explicitly — for a big crawl this
+        # can take a few seconds while the LLM scoring kicks off.
+        _push_progress({"event": "persisting", "docs": len(docs)})
         stats = upsert_documents(docs)
-        log.info("done", fetched=len(docs), inserted=stats["inserted"])
+        # `created` + `modified` from upsert_documents = docs that actually
+        # produced a ChangeEvent (real "change" count). `inserted` is
+        # raw_documents inserts which can include unchanged duplicates.
+        changed = (stats.get("created", 0) or 0) + (stats.get("modified", 0) or 0)
+        _close_fetch_run("completed", fetched=len(docs), changed=changed)
+        log.info("done", fetched=len(docs), inserted=stats["inserted"], changed=changed)
+        _push_progress({
+            "event": "done",
+            "fetched": len(docs),
+            "created": stats.get("created", 0),
+            "modified": stats.get("modified", 0),
+            "unchanged": stats.get("unchanged", 0),
+        })
         return {"domain": allowed_domain, "fetched": len(docs), **stats}
     except Exception as exc:  # noqa: BLE001
         log.error("failed", error=str(exc), error_type=type(exc).__name__)
+        _close_fetch_run("failed")
         raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))

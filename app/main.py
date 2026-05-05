@@ -20,7 +20,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.database import create_db_and_tables
 from app.logging_setup import get_logger, setup_logging
-from app.routers import admin, alerts, domains, health, subscriptions
+from app.routers import (
+    admin,
+    alerts,
+    alerts_v2,
+    areas,
+    domains,
+    health,
+    sources_v2,
+    subscriptions,
+)
 
 setup_logging()
 logger = get_logger(__name__)
@@ -69,6 +78,9 @@ app.include_router(health.router)
 app.include_router(domains.router)
 app.include_router(subscriptions.router)
 app.include_router(alerts.router)
+app.include_router(alerts_v2.router)
+app.include_router(areas.router)
+app.include_router(sources_v2.router)
 app.include_router(admin.router)
 
 

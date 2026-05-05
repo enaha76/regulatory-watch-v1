@@ -20,11 +20,31 @@
     },
     {
       "type": "table",
-      "columns": ["HTS Code", "Article Description", "General Rate of Duty", "Special Rate / Section 301"],
+      "columns": [
+        "HTS Code",
+        "Article Description",
+        "General Rate of Duty",
+        "Special Rate / Section 301"
+      ],
       "rows": [
-        ["8507.60.00", "Lithium-ion batteries", "3.4%", "+ 25% (See Notice 2026-041)"],
-        ["8541.40.60", "Diodes for semiconductor devices", "Free", "Free"],
-        ["8542.31.00", "Processors and controllers, integrated circuits", "Free", "+ 10% (Restricted ECCN, see Notice 2026-035)"]
+        [
+          "8507.60.00",
+          "Lithium-ion batteries",
+          "32.5%",
+          "+ 25% (See Notice 2026-041)"
+        ],
+        [
+          "8541.40.60",
+          "Diodes for semiconductor devices",
+          "Free",
+          "Free"
+        ],
+        [
+          "8542.31.00",
+          "Processors and controllers, integrated circuits",
+          "Free",
+          "+ 10% (Restricted ECCN, see Notice 2026-035)"
+        ]
       ]
     },
     {
@@ -37,5 +57,5 @@
     "filename": "tariff-schedule-2026.pdf",
     "document_title": "GENERAL TARIFF SCHEDULE — 2026 EDITION"
   },
-  "updated_at": "2026-01-01T00:00:00Z"
+  "updated_at": "2026-05-05T15:42:42.801Z"
 }

@@ -27,9 +27,24 @@ class Domain(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     domain: str = Field(index=True, unique=True, max_length=255)
+    # Optional user-supplied display name (set via the Add Source UI).
+    # NULL = use the authority lookup / hostname-derived fallback. See
+    # migration 014. Surfaced through /api/v2/sources `name`.
+    label: Optional[str] = Field(default=None, max_length=255)
     seed_urls: list[str] = Field(default=[], sa_column=Column(JSON, nullable=False, server_default="[]"))
     status: str = Field(default="active", max_length=20)
     rate_limit_rps: float = Field(default=1.0, description="Max requests per second to this domain")
+    # Per-source crawl frequency. NULL = use platform default (1 day).
+    # Set via the Add Source / Edit Source UI; consulted by the
+    # crawl_due_domains beat task. See migration 015.
+    crawl_interval_seconds: Optional[int] = Field(default=None)
+    # Wall-clock timestamp set at the start of each web_crawl_task run.
+    # Used by crawl_due_domains to decide whether a domain is overdue.
+    # NULL = never crawled. See migration 016.
+    last_crawled_at: Optional[datetime] = Field(default=None, index=True)
+    # Per-source page cap. NULL = use platform default (CRAWL_DEFAULT_MAX_PAGES,
+    # 50). Range 1..10000 enforced at the DB level. See migration 017.
+    max_pages: Optional[int] = Field(default=None)
 
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
@@ -444,6 +459,19 @@ class UserSubscription(SQLModel, table=True):
     keywords: list[str] = Field(
         default=[], sa_column=Column(JSON, nullable=False, server_default="[]"),
     )
+    # Strict pre-filters applied BEFORE embedding cosine similarity in
+    # services/matching.py. Empty list = no filter (subscription accepts
+    # any HS code / any country at this stage). Migration 013 added these.
+    # `hs_codes` matches against ChangeEvent entities of type='code'.
+    # `countries` matches against ChangeEvent.origin_countries ∪
+    # destination_countries. Both are ISO-style codes (HS digits, ISO-2
+    # country codes — "EU"/"UK" tolerated).
+    hs_codes: list[str] = Field(
+        default=[], sa_column=Column(JSON, nullable=False, server_default="[]"),
+    )
+    countries: list[str] = Field(
+        default=[], sa_column=Column(JSON, nullable=False, server_default="[]"),
+    )
     embedding: Optional[list] = Field(
         default=None, sa_column=Column(Vector(1536), nullable=True),
     )
@@ -473,6 +501,11 @@ class Alert(SQLModel, table=True):
             "status IN ('unread','read','dismissed')",
             name="ck_alerts_status",
         ),
+        CheckConstraint(
+            "user_feedback IS NULL OR user_feedback IN "
+            "('relevant','not_relevant','partially_relevant')",
+            name="ck_alerts_user_feedback",
+        ),
     )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
@@ -490,4 +523,6 @@ class Alert(SQLModel, table=True):
     )
 
     status: str = Field(default="unread", max_length=20)
+    pinned: bool = Field(default=False, nullable=False)
+    user_feedback: Optional[str] = Field(default=None, max_length=24)
     created_at: datetime = Field(default_factory=utcnow)

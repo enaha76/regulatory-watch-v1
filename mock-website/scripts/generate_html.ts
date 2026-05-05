@@ -194,7 +194,11 @@ function loadAll(): Regulation[] {
   for (const sub of ['regulations', 'notices', 'guidance']) {
     const dir = path.join(DATA_DIR, sub);
     if (!fs.existsSync(dir)) continue;
-    for (const f of fs.readdirSync(dir)) {
+    // Sort filenames so the readdir order doesn't depend on the
+    // filesystem's directory layout — keeps category index pages
+    // byte-stable across rebuilds.
+    const files = fs.readdirSync(dir).sort();
+    for (const f of files) {
       if (!f.endsWith('.json')) continue;
       const raw = fs.readFileSync(path.join(dir, f), 'utf8');
       out.push(JSON.parse(raw) as Regulation);
@@ -242,13 +246,25 @@ function generateCategoryIndex(category: string, regs: Regulation[]) {
 }
 
 function generateHome(allRegs: Regulation[]) {
+  // Sort by effective_date (the regulation's official effective date),
+  // NOT updated_at. updated_at flips to "now" on every save, which
+  // would reshuffle this list on every edit and produce a spurious
+  // change-event on the crawler side ("homepage modified"). We want
+  // the homepage to stay byte-stable unless a regulation's actual
+  // metadata changes.
+  // Tiebreaker on slug for total deterministic ordering.
   const recent = [...allRegs]
-    .sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''))
+    .sort((a, b) => {
+      const ad = a.effective_date || '';
+      const bd = b.effective_date || '';
+      if (bd !== ad) return bd.localeCompare(ad);
+      return a.slug.localeCompare(b.slug);
+    })
     .slice(0, 6);
   const list = recent
     .map(
       (r) =>
-        `<li><strong>${escapeHtml((r.updated_at || '').slice(0, 10))}:</strong> <a href="/${r.category}/${r.slug}.html">${escapeHtml(r.title)}</a></li>`,
+        `<li><strong>${escapeHtml(r.effective_date || '—')}:</strong> <a href="/${r.category}/${r.slug}.html">${escapeHtml(r.title)}</a></li>`,
     )
     .join('');
   const html = renderShell(

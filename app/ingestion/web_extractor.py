@@ -116,6 +116,17 @@ _SKIP_LINE_MARKERS: tuple[str, ...] = (
     "secure .gov websites use",
     # Cookie / consent banners
     "accept cookies", "cookie policy", "we use cookies", "this site uses cookies",
+    # Feedback / survey banners — these are A/B-shown on gov sites and
+    # appear on a different page each fetch, generating spurious
+    # "modified" change events. CBP, USDA and a few others use these
+    # exact phrasings; pattern-match the common ones.
+    "you have been selected to participate",
+    "give feedback",          # catches "Yes, I'll give feedback"
+    "give feedbackno thanks", # the buttons-as-text variant
+    "was this page helpful",
+    "did you find what you were looking for",
+    "rate your experience",
+    "tell us what you think",
 )
 
 _EMPTY_ALT_IMAGE_RE = re.compile(r"!\[\s*\]\([^)]*\)")

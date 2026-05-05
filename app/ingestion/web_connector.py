@@ -24,7 +24,7 @@ import hashlib
 import logging
 from collections import deque
 from datetime import datetime, timezone
-from typing import List, Optional, Set
+from typing import Callable, List, Optional, Set
 from urllib.parse import urljoin, urlparse
 from uuid import uuid4
 
@@ -236,6 +236,7 @@ class WebConnector(IngestorBase):
         harvest_xml: bool = True,
         max_pdfs: int = 20,
         max_xmls: int = 10,
+        on_progress: Optional[Callable[[dict], None]] = None,
     ) -> None:
         self.seed_urls = seed_urls
         self.allowed_domain = allowed_domain
@@ -253,6 +254,21 @@ class WebConnector(IngestorBase):
         self._crawler = None
         self._crawler_cfg = None
         self._crawl_run_cfg = None
+        # Optional progress callback. Invoked synchronously from inside the
+        # asyncio loop; the celery task wires it to self.update_state so the
+        # UI can render a live "thinking" log. Failures here MUST NOT abort
+        # the crawl, hence the broad except in _emit_progress.
+        self.on_progress = on_progress
+
+    def _emit_progress(self, event: str, **kwargs) -> None:
+        """Send a progress event to the optional callback. Never raises."""
+        if self.on_progress is None:
+            return
+        try:
+            self.on_progress({"event": event, **kwargs})
+        except Exception:  # noqa: BLE001
+            # Bookkeeping failure must not derail the crawl.
+            pass
 
     # ── robots.txt ───────────────────────────────────────────────────────────
 
@@ -656,6 +672,12 @@ class WebConnector(IngestorBase):
             "WebConnector starting: domain=%s seeds=%d max_pages=%d",
             self.allowed_domain, len(self.seed_urls), self.max_pages,
         )
+        self._emit_progress(
+            "crawl_started",
+            domain=self.allowed_domain,
+            seeds=list(self.seed_urls),
+            max_pages=self.max_pages,
+        )
 
         # ── Try Crawl4AI BestFirstCrawlingStrategy ────────────────────────────
         # Ranks discovered URLs by regulatory keyword relevance so the most
@@ -729,6 +751,10 @@ class WebConnector(IngestorBase):
                 logger.info(
                     "BestFirst crawl done: domain=%s pages=%d",
                     self.allowed_domain, len(crawl4ai_results),
+                )
+                self._emit_progress(
+                    "bestfirst_done",
+                    pages_returned=len(crawl4ai_results),
                 )
 
         except (ImportError, AttributeError) as exc:
@@ -817,6 +843,13 @@ class WebConnector(IngestorBase):
                         last_seen_at=now,
                     )
                 )
+                self._emit_progress(
+                    "page_indexed",
+                    url=url,
+                    title=title[:120] if title else None,
+                    current=len(html_documents),
+                    max=self.max_pages,
+                )
 
         # ── Fallback: manual BFS (when BestFirst unavailable) ─────────────────
         else:
@@ -895,6 +928,13 @@ class WebConnector(IngestorBase):
                                     last_seen_at=now,
                                 )
                             )
+                            self._emit_progress(
+                                "page_indexed",
+                                url=url,
+                                title=title[:120] if title else None,
+                                current=len(html_documents),
+                                max=self.max_pages,
+                            )
 
                     if depth < self.max_depth:
                         for href in self._extract_links(response, url):
@@ -934,6 +974,11 @@ class WebConnector(IngestorBase):
                 "Harvesting %d PDF files (max %d)...",
                 len(pdf_urls), self.max_pdfs,
             )
+            self._emit_progress(
+                "pdf_phase",
+                count=len(pdf_urls),
+                max=self.max_pdfs,
+            )
             pdf_documents = await self._harvest_pdf_docs(pdf_urls)
 
         # ── Harvest XMLs ──────────────────────────────────────────────
@@ -943,6 +988,11 @@ class WebConnector(IngestorBase):
                 "Harvesting %d XML files (max %d)...",
                 len(xml_urls), self.max_xmls,
             )
+            self._emit_progress(
+                "xml_phase",
+                count=len(xml_urls),
+                max=self.max_xmls,
+            )
             xml_documents = await self._harvest_xml_docs(xml_urls)
 
         all_docs = html_documents + pdf_documents + xml_documents
@@ -950,5 +1000,12 @@ class WebConnector(IngestorBase):
             "WebConnector finished: domain=%s html=%d pdf=%d xml=%d total=%d",
             self.allowed_domain, len(html_documents),
             len(pdf_documents), len(xml_documents), len(all_docs),
+        )
+        self._emit_progress(
+            "connector_done",
+            html=len(html_documents),
+            pdf=len(pdf_documents),
+            xml=len(xml_documents),
+            total=len(all_docs),
         )
         return all_docs

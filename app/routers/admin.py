@@ -58,15 +58,30 @@ def trigger_crawl(payload: TriggerCrawlRequest | None = None):
 
 @router.get("/task/{task_id}")
 def get_task_status(task_id: str):
-    """Inspect a Celery task. Useful for the admin UI to poll completion."""
+    """Inspect a Celery task. Useful for the admin UI to poll completion.
+
+    For a running web_crawl_task, ``state == "PROGRESS"`` and ``progress``
+    is the latest meta the worker emitted via ``self.update_state`` —
+    the frontend renders that as a live "thinking" log.
+    """
     from app.celery_app import celery
 
     result = celery.AsyncResult(task_id)
-    return {
+    state = result.state
+    ready = result.ready()
+    payload: dict = {
         "task_id": task_id,
-        "state": result.state,
-        "ready": result.ready(),
-        "successful": result.successful() if result.ready() else None,
-        "result": result.result if result.ready() and result.successful() else None,
-        "error": str(result.result) if result.ready() and not result.successful() else None,
+        "state": state,
+        "ready": ready,
+        "successful": result.successful() if ready else None,
+        "result": result.result if ready and result.successful() else None,
+        "error": str(result.result) if ready and not result.successful() else None,
+        "progress": None,
     }
+    # Custom states (PROGRESS) expose their meta dict via ``result.info``.
+    # Only surface dicts — guard against tasks that overload other shapes.
+    if state == "PROGRESS":
+        info = getattr(result, "info", None)
+        if isinstance(info, dict):
+            payload["progress"] = info
+    return payload
