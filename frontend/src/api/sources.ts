@@ -86,7 +86,17 @@ export interface CrawlProgressEvent {
 
 export interface CrawlTaskResult {
   domain: string;
+  /**
+   * Total documents harvested = `pages_html + pages_pdf + pages_xml`.
+   * Kept for backward compatibility; new code should prefer the
+   * per-type breakdown so users can tell at a glance whether their
+   * `maxPages` setting (which only caps HTML) is doing what they
+   * expect.
+   */
   fetched: number;
+  pages_html?: number;
+  pages_pdf?: number;
+  pages_xml?: number;
   inserted: number;
   updated: number;
   archived: number;

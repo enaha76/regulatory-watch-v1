@@ -776,6 +776,19 @@ export function SourcesView() {
           const modified = status.result.modified ?? 0;
           const pageChanges = created + modified;
           const fetched = status.result.fetched;
+          const pagesHtml = status.result.pages_html ?? fetched;
+          const pagesPdf = status.result.pages_pdf ?? 0;
+          const pagesXml = status.result.pages_xml ?? 0;
+          // Honest breakdown for the no-changes / no-new-alerts toasts.
+          // "fetched=33" looked like a broken cap when the user had set
+          // maxPages=15 — the truth is 15 HTML pages + 16 PDFs + 2 XML.
+          const fetchBreakdown = [
+            pagesHtml > 0 ? `${pagesHtml} HTML` : null,
+            pagesPdf > 0 ? `${pagesPdf} PDF${pagesPdf === 1 ? "" : "s"}` : null,
+            pagesXml > 0 ? `${pagesXml} XML` : null,
+          ]
+            .filter(Boolean)
+            .join(" / ") || `${fetched} document${fetched === 1 ? "" : "s"}`;
           const sourceName = cur.sourceName;
           const idsBefore = cur.unreadIdsBefore;
           // Defer the unread re-fetch slightly so M5 matching has a
@@ -820,7 +833,7 @@ export function SourcesView() {
               // "cosmetic edits" message below, which is misleading
               // (these aren't cosmetic, they're brand-new docs).
               notify(`Baseline captured for ${sourceName}`, {
-                description: `${created} document${created === 1 ? "" : "s"} now being watched. You'll be notified when any of them change.`,
+                description: `${created} document${created === 1 ? "" : "s"} now being watched (${fetchBreakdown}). You'll be notified when any of them change.`,
                 variant: "info",
                 durationMs: 8000,
               });
@@ -829,14 +842,14 @@ export function SourcesView() {
               // filter — typical for cosmetic banner shifts. Tell the
               // user clearly so they don't go hunting in the inbox.
               notify(`Crawled ${sourceName} — no new alerts`, {
-                description: `${pageChanges} page${pageChanges === 1 ? "" : "s"} changed but score was below your relevance threshold (cosmetic / minor edits)`,
+                description: `${pageChanges} page${pageChanges === 1 ? "" : "s"} changed but score was below your relevance threshold (cosmetic / minor edits) · ${fetchBreakdown} fetched`,
                 variant: "info",
                 durationMs: 6000,
               });
             } else {
               // Nothing changed at all.
               notify(`Crawled ${sourceName} — no changes`, {
-                description: `${fetched} page${fetched === 1 ? "" : "s"} fetched, all unchanged`,
+                description: `${fetchBreakdown} fetched, all unchanged`,
                 variant: "info",
                 durationMs: 4000,
               });

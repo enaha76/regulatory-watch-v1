@@ -616,16 +616,36 @@ def web_crawl_task(
         # produced a ChangeEvent (real "change" count). `inserted` is
         # raw_documents inserts which can include unchanged duplicates.
         changed = (stats.get("created", 0) or 0) + (stats.get("modified", 0) or 0)
+
+        # Per-type counts so the UI can say "12 HTML / 18 PDFs / 3 XML"
+        # instead of just "fetched=33" — the latter looked broken when
+        # users had max_pages=15 set and saw fetched twice that. Caps are
+        # per-type (max_pages / max_pdfs / max_xmls) so the breakdown is
+        # the only honest summary.
+        pages_html = sum(1 for d in docs if d.source_type == "web")
+        pages_pdf = sum(1 for d in docs if d.source_type == "pdf")
+        pages_xml = sum(1 for d in docs if d.source_type == "xml")
+
         _close_fetch_run("completed", fetched=len(docs), changed=changed)
         log.info("done", fetched=len(docs), inserted=stats["inserted"], changed=changed)
         _push_progress({
             "event": "done",
             "fetched": len(docs),
+            "pages_html": pages_html,
+            "pages_pdf": pages_pdf,
+            "pages_xml": pages_xml,
             "created": stats.get("created", 0),
             "modified": stats.get("modified", 0),
             "unchanged": stats.get("unchanged", 0),
         })
-        return {"domain": allowed_domain, "fetched": len(docs), **stats}
+        return {
+            "domain": allowed_domain,
+            "fetched": len(docs),
+            "pages_html": pages_html,
+            "pages_pdf": pages_pdf,
+            "pages_xml": pages_xml,
+            **stats,
+        }
     except Exception as exc:  # noqa: BLE001
         log.error("failed", error=str(exc), error_type=type(exc).__name__)
         _close_fetch_run("failed")

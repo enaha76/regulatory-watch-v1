@@ -619,15 +619,32 @@ class WebConnector(IngestorBase):
     async def _harvest_pdf_docs(self, pdf_urls: Set[str]) -> List[RawDocument]:
         from app.ingestion.pdf_connector import PDFConnector
         docs: List[RawDocument] = []
-        for url in list(pdf_urls)[: self.max_pdfs]:
+        # Cap and snapshot the URL list so per-iteration progress events
+        # can quote a stable "N of M" — without this, the UI would either
+        # see no progress for the whole PDF phase (a silent 100+ second
+        # stretch on real CBP-sized crawls) or get a misleading total
+        # because pdf_urls is a Set (unordered).
+        pdf_list = list(pdf_urls)[: self.max_pdfs]
+        total = len(pdf_list)
+        for idx, url in enumerate(pdf_list, start=1):
             logger.info("Harvesting PDF: %s", url)
+            pdf_title = url
             try:
                 connector = PDFConnector(source=url)
                 pdf_docs = await connector.fetch()
                 docs.extend(pdf_docs)
+                if pdf_docs and pdf_docs[0].title:
+                    pdf_title = pdf_docs[0].title
                 logger.info("PDF harvested: %s — %d pages", url, len(pdf_docs))
             except Exception as exc:
                 logger.warning("PDF harvest failed for %s: %s", url, exc)
+            self._emit_progress(
+                "pdf_indexed",
+                url=url,
+                title=pdf_title[:120] if pdf_title else None,
+                current=idx,
+                max=total,
+            )
             await asyncio.sleep(self._delay)
         return docs
 
@@ -636,7 +653,9 @@ class WebConnector(IngestorBase):
     async def _harvest_xml_docs(self, xml_urls: Set[str]) -> List[RawDocument]:
         from app.ingestion.xml_connector import XMLConnector
         docs: List[RawDocument] = []
-        for url in list(xml_urls)[: self.max_xmls]:
+        xml_list = list(xml_urls)[: self.max_xmls]
+        total = len(xml_list)
+        for idx, url in enumerate(xml_list, start=1):
             logger.info("Harvesting XML: %s", url)
             try:
                 connector = XMLConnector(source=url)
@@ -645,6 +664,12 @@ class WebConnector(IngestorBase):
                 logger.info("XML harvested: %s — %d sections", url, len(xml_docs))
             except Exception as exc:
                 logger.warning("XML harvest failed for %s: %s", url, exc)
+            self._emit_progress(
+                "xml_indexed",
+                url=url,
+                current=idx,
+                max=total,
+            )
             await asyncio.sleep(self._delay)
         return docs
 
