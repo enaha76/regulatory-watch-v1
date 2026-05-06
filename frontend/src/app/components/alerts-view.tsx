@@ -1156,38 +1156,29 @@ export function AlertsView() {
                     onClick={() => setKeyboardIdx(idx)}
                     className={`group ${rowOpacity} ${unreadCue} ${keyboardCue}`.trim()}
                   >
-                    {/* Single rich Alert cell — country flag inline,
-                        title clickable, authority + chips below */}
-                    <TableCell>
-                      <div className="flex items-start gap-3 max-w-2xl">
-                        <div className="shrink-0 mt-0.5">
+                    {/* Two-line card: title + meta row. Country flag
+                        sized as a framed avatar so the row has a
+                        clear left anchor. Bullet separators replaced
+                        with comfortable spacing for a calmer feel. */}
+                    <TableCell className="py-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        {/* Country flag — small framed avatar. */}
+                        <div className="shrink-0 rounded-md overflow-hidden ring-1 ring-border/60 bg-muted/40 size-8 flex items-center justify-center">
                           {getCountryFlag(alert.country)}
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start gap-2 flex-wrap">
+                        <div className="min-w-0 flex-1 space-y-0.5">
+                          <div className="flex items-center gap-2 min-w-0">
                             {isUnread && (
-                              <Badge
-                                variant="default"
-                                className="shrink-0"
-                                style={{ fontSize: "var(--text-xs)" }}
-                              >
-                                New
-                              </Badge>
+                              <span className="size-1.5 rounded-full bg-primary shrink-0" />
                             )}
                             {alert.pinned && (
-                              <Badge
-                                variant="outline"
-                                className="shrink-0 text-primary border-primary/30 gap-1"
-                                style={{ fontSize: "var(--text-xs)" }}
-                              >
-                                <Pin className="size-3 fill-current" />
-                                Pinned
-                              </Badge>
+                              <Pin className="size-3.5 fill-primary text-primary shrink-0" />
                             )}
                             <p
                               onClick={() => navigate(`/alerts/${alert.id}`)}
-                              className="cursor-pointer hover:text-primary hover:underline truncate"
+                              className="cursor-pointer hover:text-primary truncate min-w-0"
                               style={{
+                                fontSize: "var(--text-base)",
                                 fontWeight: isReviewed
                                   ? "var(--font-weight-normal)"
                                   : isUnread
@@ -1199,25 +1190,16 @@ export function AlertsView() {
                             </p>
                           </div>
                           <div
-                            className="flex items-center gap-2 flex-wrap text-muted-foreground mt-1"
+                            className="flex items-center gap-2.5 flex-wrap text-muted-foreground"
                             style={{ fontSize: "var(--text-xs)" }}
                           >
-                            <span className="truncate max-w-[260px]">
+                            <span className="truncate max-w-[300px]">
                               {alert.authority}
                             </span>
-                            <span className="opacity-50">·</span>
-                            <span>{alert.country}</span>
-                            <span className="opacity-50">·</span>
+                            <span className="size-1 rounded-full bg-muted-foreground/40 shrink-0" />
                             <Badge
                               variant="outline"
-                              className="px-1.5 py-0 h-4"
-                              style={{ fontSize: "var(--text-xs)" }}
-                            >
-                              {alert.tradeLane}
-                            </Badge>
-                            <Badge
-                              variant="outline"
-                              className="px-1.5 py-0 h-4"
+                              className="px-1.5 py-0 h-4 font-normal"
                               style={{ fontSize: "var(--text-xs)" }}
                             >
                               {alert.regulationType}

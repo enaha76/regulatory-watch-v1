@@ -371,6 +371,52 @@ def fetch_source_title(session: Session, event: ChangeEvent) -> Optional[str]:
     return title
 
 
+# Imperative prefixes the scoring prompt tends to start summaries with.
+# They're correct in a multi-sentence summary ("You must do X. You should
+# also do Y.") but redundant noise as the FIRST words of an inbox row
+# preview. Strip them so the preview reads like a news ticker.
+_PREVIEW_PREFIXES_TO_STRIP = (
+    "you must be aware that ",
+    "you must ",
+    "you need to be aware that ",
+    "you need to ",
+    "you should be aware that ",
+    "you should ",
+    "it is important to note that ",
+    "please note that ",
+    "the document now includes ",
+    "the document has been updated to ",
+    "this rule ",
+    "this proposed rule ",
+)
+
+
+def _summary_preview(summary: Optional[str], limit: int = 200) -> Optional[str]:
+    """One-line preview of a compliance summary.
+
+    Used by the inbox row to show context under the headline. Strips
+    leading imperative phrases and collapses whitespace.
+    """
+    if not summary:
+        return None
+    text = " ".join(summary.split())
+    low = text.lower()
+    for pref in _PREVIEW_PREFIXES_TO_STRIP:
+        if low.startswith(pref):
+            text = text[len(pref):]
+            # Re-capitalise the first letter so the preview reads as a
+            # standalone sentence rather than a fragment.
+            if text:
+                text = text[0].upper() + text[1:]
+            break
+    if not text:
+        return None
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rsplit(" ", 1)[0].rstrip(",;:.- ")
+    return (cut or text[:limit]) + "…"
+
+
 def _looks_like_url_title(title: str) -> bool:
     """
     True when the stored "title" is actually a URL string the connector
