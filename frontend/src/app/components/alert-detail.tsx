@@ -30,6 +30,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { IN, CN, EU, US } from "country-flag-icons/react/3x2";
+import { AskAiPanel, type AskAiContext } from "./ask-ai-panel";
 
 // Detail page reuses the API model — adds summary[], sourceUrl, pdfUrl?.
 type Alert = ApiAlertDetail;
@@ -960,51 +961,60 @@ export function AlertDetail() {
         </CardContent>
       </Card>
 
-      {/* Floating "Ask AI" affordance — sits above the page content
-          at bottom-right, doesn't dominate the layout. Animated
-          gradient + sparkle is intentionally a bit playful so it
-          *looks* alive even though the LLM endpoint isn't wired yet.
-          When it lands we swap the disabled cursor for a real click
-          handler and slide out a chat panel. */}
-      <AskAIPlaceholder />
+      {/* Floating "Ask AI" affordance — opens the assistant drawer
+          scoped to this alert. Static UI for now (mocked
+          conversation + simulated voice STT); see ask-ai-panel.tsx
+          for swap-in points when the real LLM/tool-use backend
+          lands. */}
+      <AskAITrigger
+        context={{
+          alertTitle: alert?.title,
+          authority: alert?.authority,
+        }}
+      />
     </div>
   );
 }
 
-function AskAIPlaceholder() {
+function AskAITrigger({ context }: { context: AskAiContext }) {
+  const [open, setOpen] = useState(false);
   return (
-    <div className="fixed bottom-6 right-6 z-30 group" aria-hidden="false">
-      <button
-        type="button"
-        disabled
-        title="AI assistant — coming soon"
-        aria-label="Ask AI about this alert (coming soon)"
-        className="
-          relative inline-flex items-center gap-2 rounded-full
-          px-4 py-2.5 cursor-not-allowed
-          bg-gradient-to-r from-primary via-primary to-accent
-          text-primary-foreground shadow-lg shadow-primary/30
-          transition-transform hover:scale-[1.02]
-          before:absolute before:inset-0 before:rounded-full
-          before:bg-gradient-to-r before:from-primary/0 before:via-white/20 before:to-primary/0
-          before:opacity-0 before:transition-opacity before:duration-700
-          group-hover:before:opacity-100
-        "
-        style={{ fontSize: "var(--text-sm)", fontWeight: "var(--font-weight-medium)" }}
-      >
-        <Sparkles
-          className="size-4 animate-pulse"
-          style={{ animationDuration: "2.4s" }}
-        />
-        <span>Ask AI</span>
-        <span
-          className="rounded-full bg-white/20 px-2 py-0.5 leading-none tabular-nums"
-          style={{ fontSize: "var(--text-xs)" }}
+    <>
+      <div className="fixed bottom-6 right-6 z-30 group">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          title="Ask AI about this alert"
+          aria-label="Ask AI about this alert"
+          className="
+            relative inline-flex items-center gap-2 rounded-full
+            px-4 py-2.5 cursor-pointer
+            bg-gradient-to-r from-primary via-primary to-accent
+            text-primary-foreground shadow-lg shadow-primary/30
+            transition-transform hover:scale-[1.03] active:scale-[0.99]
+            before:absolute before:inset-0 before:rounded-full
+            before:bg-gradient-to-r before:from-primary/0 before:via-white/25 before:to-primary/0
+            before:opacity-0 before:transition-opacity before:duration-700
+            group-hover:before:opacity-100
+            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40
+          "
+          style={{ fontSize: "var(--text-sm)", fontWeight: "var(--font-weight-medium)" }}
         >
-          soon
-        </span>
-      </button>
-    </div>
+          <Sparkles
+            className="size-4 animate-pulse"
+            style={{ animationDuration: "2.4s" }}
+          />
+          <span>Ask AI</span>
+          <span
+            className="rounded-full bg-white/20 px-2 py-0.5 leading-none tabular-nums"
+            style={{ fontSize: "var(--text-xs)" }}
+          >
+            beta
+          </span>
+        </button>
+      </div>
+      <AskAiPanel open={open} onOpenChange={setOpen} context={context} />
+    </>
   );
 }
 

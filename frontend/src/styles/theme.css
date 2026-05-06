@@ -222,3 +222,11 @@
 html {
   font-size: var(--font-size);
 }
+
+/* Voice-recorder waveform bars (Ask AI panel). Runs as long as the
+   recording flag is on; the bars stagger via inline animation-delay
+   to read as a live audio meter rather than a strict progress bar. */
+@keyframes regwatch-wave {
+  0%, 100% { height: 25%; }
+  50% { height: 95%; }
+}
