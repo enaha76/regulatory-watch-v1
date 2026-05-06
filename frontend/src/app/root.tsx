@@ -22,6 +22,8 @@ import {
   Search,
   Coins,
   LogOut,
+  Moon,
+  Sun,
 } from "lucide-react";
 import { Badge } from "@/app/components/ui/badge";
 import {
@@ -43,11 +45,43 @@ export function Root() {
   );
 }
 
+// Theme management — toggles the `dark` class on <html>, persists the
+// choice across sessions, and falls back to the OS preference on first
+// load. Kept in this file (not a separate context) because it's a
+// single boolean and the toggle lives next to sign-out.
+function useTheme(): { dark: boolean; toggle: () => void } {
+  const getInitial = (): boolean => {
+    try {
+      const stored = localStorage.getItem("regwatch.theme");
+      if (stored === "dark") return true;
+      if (stored === "light") return false;
+    } catch {
+      /* localStorage may be blocked in private mode */
+    }
+    return (
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-color-scheme: dark)")?.matches === true
+    );
+  };
+  const [dark, setDark] = useState<boolean>(getInitial);
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("dark", dark);
+    try {
+      localStorage.setItem("regwatch.theme", dark ? "dark" : "light");
+    } catch {
+      /* ignore */
+    }
+  }, [dark]);
+  return { dark, toggle: () => setDark((d) => !d) };
+}
+
 function RootInner() {
   const navigate = useNavigate();
   const location = useLocation();
   const { unreadCount } = useNotifications();
   const { user, logout } = useAuth();
+  const { dark, toggle: toggleTheme } = useTheme();
   const [activeView, setActiveView] = useState(() => {
     if (location.pathname === "/" || location.pathname.startsWith("/alerts")) return "inbox";
     if (location.pathname === "/archive") return "archive";
@@ -204,6 +238,15 @@ function RootInner() {
                   </div>
                 ) : null}
               </div>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                onClick={toggleTheme}
+                title={dark ? "Switch to light mode" : "Switch to dark mode"}
+              >
+                {dark ? <Sun /> : <Moon />}
+                <span>{dark ? "Light mode" : "Dark mode"}</span>
+              </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
               <SidebarMenuButton onClick={logout}>

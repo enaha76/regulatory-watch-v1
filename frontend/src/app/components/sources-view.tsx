@@ -1255,7 +1255,6 @@ export function SourcesView() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead style={{ width: "100px" }}>ID</TableHead>
               <TableHead>Source Name</TableHead>
               <TableHead style={{ width: "100px" }}>Country</TableHead>
               <TableHead style={{ width: "120px" }}>Type</TableHead>
@@ -1293,9 +1292,6 @@ export function SourcesView() {
                 <TableRow
                   className={source.status === "inactive" ? "opacity-60" : ""}
                 >
-                  <TableCell>
-                    <span className="text-muted-foreground">{source.id}</span>
-                  </TableCell>
                   <TableCell>
                     <div>
                       <p

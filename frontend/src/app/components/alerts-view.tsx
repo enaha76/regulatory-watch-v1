@@ -575,10 +575,21 @@ export function AlertsView() {
     );
   };
 
+  // Three-tier relevance colour. Mirrors the LLM scoring rubric:
+  //   ≥ 80 → critical (red urgency — needs your attention now)
+  //   60-79 → substantive (amber — meaningful change)
+  //   < 60 → informational (slate — file under FYI)
+  // The previous palette put two scores under the same primary/accent
+  // colour so a 60% read like a 95% — flat hierarchy. This pulls the
+  // urgent ones out visually and demotes the noise.
   const getRelevanceColor = (score: number) => {
-    if (score >= 80) return "bg-accent text-accent-foreground";
-    if (score >= 60) return "bg-primary text-primary-foreground";
-    return "bg-muted text-muted-foreground";
+    if (score >= 80) {
+      return "bg-destructive/90 text-destructive-foreground border-transparent";
+    }
+    if (score >= 60) {
+      return "bg-accent text-accent-foreground border-transparent";
+    }
+    return "bg-muted text-muted-foreground border-transparent";
   };
 
   const getCountryFlag = (country: string) => {
@@ -975,6 +986,12 @@ export function AlertsView() {
               </SelectContent>
             </Select>
 
+            {/* Visual divider between the "view" cluster
+                (include-read / filter / sort) above and the "tools"
+                cluster (export / keyboard hint) below. Without this
+                the toolbar reads as one wall of controls. */}
+            <div className="hidden lg:block w-px h-6 bg-border" />
+
             {/* Export current filtered view as CSV. The backend
                 endpoint mirrors the same auth + status filter the
                 inbox uses; auditors get a stable column order they
@@ -989,10 +1006,12 @@ export function AlertsView() {
               Export CSV
             </Button>
 
-            {/* Keyboard hint — small, muted. Pro tools earn their
-                "feels fast" reputation here. */}
+            {/* Keyboard hint — small, muted, and tucked behind the
+                divider so the toolbar reads as two clusters instead
+                of one wall of controls. Pro tools earn their "feels
+                fast" reputation here. */}
             <span
-              className="hidden lg:inline text-muted-foreground select-none"
+              className="hidden xl:inline text-muted-foreground select-none"
               style={{ fontSize: "var(--text-xs)" }}
               title="Keyboard shortcuts: j/k navigate · Enter open · e archive · r mark read · p pin · / search"
             >
@@ -1003,7 +1022,11 @@ export function AlertsView() {
           </div>
         </div>
 
-        {!isEmpty && (
+        {/* Review Progress is only meaningful AFTER the user has
+            actually reviewed something. Showing an empty 0% bar at
+            the top of an inbox is just visual noise — hide until
+            there's progress to show. */}
+        {!isEmpty && reviewedCount > 0 && (
           <div className="rounded-md border bg-card p-4">
             <div className="flex items-center justify-between mb-2">
               <p
@@ -1023,10 +1046,8 @@ export function AlertsView() {
                 </p>
                 <Button
                   size="sm"
-                  variant={reviewedCount > 0 ? "default" : "outline"}
-                  disabled={reviewedCount === 0}
+                  variant="default"
                   onClick={handleClearReviewed}
-                  className={reviewedCount > 0 ? "" : "text-muted-foreground"}
                   title="Archive every alert you've already reviewed"
                 >
                   Archive reviewed ({reviewedCount})
@@ -1136,7 +1157,7 @@ export function AlertsView() {
                         : undefined
                     }
                     onClick={() => setKeyboardIdx(idx)}
-                    className={`${rowOpacity} ${unreadCue} ${keyboardCue}`.trim()}
+                    className={`group ${rowOpacity} ${unreadCue} ${keyboardCue}`.trim()}
                   >
                     {/* Single rich Alert cell — country flag inline,
                         title clickable, authority + chips below */}
@@ -1247,8 +1268,18 @@ export function AlertsView() {
                     <TableCell>
                       {/* Two button groups separated by a thin divider:
                           row-state actions on the left (pin/seen/archive),
-                          review actions on the right (thumbs / undo). */}
-                      <div className="flex items-center gap-1">
+                          review actions on the right (thumbs / undo).
+                          Hidden on idle, revealed on row-hover or
+                          keyboard focus or when there's already a
+                          state to show (pinned / reviewed). Linear /
+                          Superhuman pattern — keeps the table calm. */}
+                      <div
+                        className={`flex items-center gap-1 transition-opacity duration-150 ${
+                          isKeyboardFocused || alert.pinned || isReviewed
+                            ? "opacity-100"
+                            : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"
+                        }`}
+                      >
                         <Button
                           variant="ghost"
                           size="icon"

@@ -770,7 +770,13 @@ export function AreasOfInterestView() {
         </Tabs>
       </div>
 
-      <div className="sticky bottom-0 -mx-6 mt-6 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      {/* Sticky save bar — pinned to the viewport bottom while
+          scrolling, with a subtle elevation shadow so it reads as a
+          floating action surface rather than just "more content".
+          Without the shadow on a short page the bar visually merged
+          with the body and felt disconnected from the controls
+          above. */}
+      <div className="sticky bottom-0 -mx-6 mt-6 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-[0_-8px_24px_-12px_rgba(15,23,42,0.12)]">
         <div className="flex items-center justify-between px-6 py-4">
           <div>
             {saveError ? (
