@@ -58,14 +58,62 @@ def _element_text(el) -> str:
 
 
 def _detect_format(root) -> str:
-    """Return 'uslm', 'akn', or 'generic' based on the root element namespace."""
+    """Return 'uslm', 'akn', 'mods', or 'generic' based on the root element namespace."""
     ns = root.nsmap.get(None) or root.nsmap.get("uslm") or ""
     tag = root.tag.lower()
     if "gpo.gov" in ns or "uslm" in tag:
         return "uslm"
     if "oasis-open.org/legaldocml" in ns or "akomaNtoso" in root.tag:
         return "akn"
+    if "loc.gov/mods" in ns or "mods" in tag:
+        return "mods"
     return "generic"
+
+
+def _derive_doc_title(root, fallback: str) -> str:
+    """
+    Pull a human-readable document title out of the XML root.
+
+    Looks at the most common locations across MODS (Library of Congress
+    metadata format used by govinfo.gov), Dublin Core, RSS / Atom feeds,
+    and Federal Register's full-text XML. Returns ``fallback`` (the URL
+    or a plain string) when nothing matches.
+
+    Without this, every alert from a federalregister.gov XML harvest
+    landed in the inbox titled "Mods.Xml — Extension" or "2026-08911.xml",
+    because the previous code used the URL string itself as the document
+    title.
+    """
+    if root is None:
+        return fallback
+    # Priority order — most descriptive first.
+    xpaths = (
+        # MODS — used by govinfo.gov metadata granules.
+        "//*[local-name()='mods']/*[local-name()='titleInfo']/*[local-name()='title']",
+        # Federal Register full-text XML wraps the title in <PRESQUEST><SUBJECT>
+        # or <PREAMB><SUBJECT>; SUBJECT is the canonical headline.
+        "//*[local-name()='SUBJECT']",
+        # Dublin Core — common in academic / library XMLs.
+        "//*[local-name()='title' and namespace-uri()='http://purl.org/dc/elements/1.1/']",
+        # RSS 2.0 channel-level title.
+        "//channel/title",
+        # Atom feed-level title.
+        "//*[local-name()='feed']/*[local-name()='title']",
+        # Generic top-level <title>.
+        "/*/*[local-name()='title']",
+    )
+    for xp in xpaths:
+        try:
+            els = root.xpath(xp)
+        except Exception:
+            els = []
+        for el in els or []:
+            text = " ".join((el.itertext() if hasattr(el, "itertext") else [el])).strip()
+            # Collapse internal whitespace and reject obvious garbage.
+            text = " ".join(text.split())
+            if text and len(text) >= 3 and not text.lower().startswith("http"):
+                return text
+    return fallback
 
 
 # ── Format-specific extractors ────────────────────────────────────────────────
@@ -227,6 +275,17 @@ class XMLConnector(IngestorBase):
         fmt = _detect_format(root)
         logger.info("XMLConnector detected format=%s for %s", fmt, self.source)
 
+        # Promote the parsed document title over the URL fallback that
+        # __init__ stored. Without this, downstream alerts surface as
+        # "Mods.Xml — Abstract" instead of the actual regulation name.
+        derived = _derive_doc_title(root, fallback=self.title)
+        if derived and derived != self.title:
+            logger.info(
+                "XMLConnector derived title for %s: %r",
+                self.source, derived[:80],
+            )
+            self.title = derived
+
         if fmt == "uslm":
             sections = _extract_uslm_sections(root)
         elif fmt == "akn":
@@ -238,6 +297,28 @@ class XMLConnector(IngestorBase):
         seen_hashes: set[str] = set()
         now = _utcnow()
 
+        # Friendly labels for the cryptic short section names that appear
+        # in metadata XML formats (MODS / FR full-text). Without this the
+        # inbox gets rows like "Removal of Proscribed Countries — ext" or
+        # "— suplinf"; with it the user sees readable phrases.
+        _SECTION_PRETTY = {
+            "ext":     "Extension",
+            "extension": "Extension",
+            "abs":     "Abstract",
+            "abstract": "Abstract",
+            "suplinf": "Supplementary Information",
+            "presquest": "Subject",
+            "subject": "Subject",
+            "preamb":  "Preamble",
+        }
+
+        def _pretty_section(name: str) -> str:
+            short = (name or "").strip().lower()
+            if short in _SECTION_PRETTY:
+                return _SECTION_PRETTY[short]
+            # Title-case anything else as a best-effort.
+            return (name or "").strip().title() or "Section"
+
         for sec in sections:
             text = sec["text"].strip()
             content_hash = _sha256(text)
@@ -246,7 +327,14 @@ class XMLConnector(IngestorBase):
             seen_hashes.add(content_hash)
 
             eff = f" (effective: {sec['effective_date']})" if sec["effective_date"] else ""
-            section_title = f"{self.title} — {sec['title']}{eff}"
+            sec_label = _pretty_section(sec["title"])
+            # When there is exactly one section OR the section label is
+            # uninformative, drop the "— <section>" suffix so the row in
+            # the inbox reads as the document title alone.
+            if len(sections) == 1 or not sec_label or sec_label == "Section":
+                section_title = f"{self.title}{eff}"
+            else:
+                section_title = f"{self.title} — {sec_label}{eff}"
 
             documents.append(
                 RawDocument(

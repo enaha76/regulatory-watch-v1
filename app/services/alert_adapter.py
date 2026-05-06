@@ -283,7 +283,10 @@ _MAX_TITLE_CHARS = 120
 
 def _truncate(text: str, limit: int) -> str:
     """Truncate at a word boundary if possible, append an ellipsis."""
-    text = text.strip()
+    # Collapse runs of whitespace (including embedded \n, \t from raw
+    # HTML <title> tags like the dgft.gov.in one) into single spaces.
+    # Without this the inbox shows ugly multi-line headlines.
+    text = " ".join(text.split())
     if len(text) <= limit:
         return text
     cut = text[:limit].rsplit(" ", 1)[0].rstrip(",;:.- ")
@@ -346,11 +349,47 @@ def fetch_source_title(session: Session, event: ChangeEvent) -> Optional[str]:
     title = (sv.title or "").strip()
     if not title:
         return None
-    # Don't surface raw URLs as the alert title — humanize them instead.
     if _looks_like_url(title):
+        # Legacy XML connector stored "<URL> — <section>" as the title
+        # (govinfo MODS metadata, FR full-text fragments). The basename
+        # of those URLs is "mods.xml" / "2026-08785.xml" — humanizing
+        # them produces "Mods" / "2026 08785" which is still useless to
+        # a compliance officer. Detect those low-value patterns and
+        # return None so derive_title falls through to the LLM summary
+        # (which IS readable).
+        head = title.split(" — ", 1)[0].lower()
+        if (
+            "/mods.xml" in head
+            or "/metadata/granule/" in head
+            or "/full_text/xml/" in head
+            or head.endswith((".xml", ".pdf"))
+        ):
+            return None
+        # Otherwise still try to humanize plain URL-only titles.
         humanized = _humanize_url_to_title(title)
         return humanized or None
     return title
+
+
+def _looks_like_url_title(title: str) -> bool:
+    """
+    True when the stored "title" is actually a URL string the connector
+    fell back to because it couldn't extract a real headline.
+
+    Older crawls of govinfo MODS / federalregister XML produced rows
+    titled "https://www.govinfo.gov/.../mods.xml — abs" and the like.
+    Treat those as if no title were stored, so the priority chain
+    falls through to the (much better) summary-derived headline.
+    """
+    if not title:
+        return True
+    head = title.strip().lower().split(" — ", 1)[0]
+    if head.startswith(("http://", "https://", "www.")):
+        return True
+    # Bare ".xml" / ".pdf" filenames shoved into the title.
+    if head.endswith((".xml", ".pdf")) and "/" in head:
+        return True
+    return False
 
 
 def derive_title(
@@ -362,7 +401,9 @@ def derive_title(
     Pick a short, headline-style title for the alert card.
 
     Priority chain:
-      1. SourceVersion.title  — the document's actual headline
+      1. SourceVersion.title  — the document's actual headline (skipped
+         when the stored title is just the URL, which happened on legacy
+         XML crawls; see _looks_like_url_title)
       2. First sentence of event.summary — only if no source title
       3. A topic-based label (e.g. "Customs Trade update")
       4. Generic fallback ("Regulatory change detected")
@@ -370,9 +411,11 @@ def derive_title(
     Title and summary now come from DIFFERENT fields, so they no
     longer duplicate each other.
     """
-    # 1. Real document title (preferred)
+    # 1. Real document title (preferred). Skip URL-shaped titles —
+    # those come from the legacy XML connector default and are not
+    # human-readable; the summary-derived title below is far better.
     src_title = fetch_source_title(session, event)
-    if src_title:
+    if src_title and not _looks_like_url_title(src_title):
         return _truncate(src_title, _MAX_TITLE_CHARS)
 
     # 2. First sentence of LLM-produced summary

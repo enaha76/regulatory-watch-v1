@@ -30,6 +30,7 @@ import {
   Check,
   Undo2,
   Filter as FilterIcon,
+  Download,
   X,
 } from "lucide-react";
 import { Progress } from "@/app/components/ui/progress";
@@ -369,6 +370,13 @@ export function AlertsView() {
     includeReadRef.current = includeRead;
   }, [includeRead]);
 
+  // Keyboard navigation index — which row is "selected" for j/k/Enter/e/r.
+  // -1 means no row selected (initial state). The row at this index gets
+  // a left ring + scrolls into view. Reset whenever the filtered list
+  // changes shape.
+  const [keyboardIdx, setKeyboardIdx] = useState<number>(-1);
+  const tableContainerRef = useRef<HTMLDivElement | null>(null);
+
   // Build the list-of-statuses to fetch based on the toggle. Backend
   // accepts only one status per call, so we issue parallel requests
   // and concatenate.
@@ -457,6 +465,38 @@ export function AlertsView() {
   const totalCount = alerts.length;
   const progressPercentage =
     totalCount > 0 ? (reviewedCount / totalCount) * 100 : 0;
+
+  const handleExportCsv = async () => {
+    // Server streams the CSV with a stable column order; we just
+    // trigger the download. The auth header has to come from authFetch
+    // (the same wrapper API clients use) since the browser's <a download>
+    // can't attach our Bearer token directly.
+    try {
+      const qs = new URLSearchParams();
+      // Honour the include-read switch so the export matches what's
+      // visually on screen — auditors get the rows they think they're
+      // exporting.
+      if (!includeRead) qs.set("status", "new");
+      const url = `/api/v2/alerts/export.csv${qs.toString() ? `?${qs}` : ""}`;
+      const { authFetch } = await import("@/app/auth");
+      const res = await authFetch(url);
+      if (!res.ok) {
+        throw new Error(`Export failed: HTTP ${res.status}`);
+      }
+      const blob = await res.blob();
+      const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "");
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `regwatch-alerts-${stamp}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Free the object URL after the click; some browsers leak it.
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    } catch (err: any) {
+      console.warn("CSV export failed:", err);
+    }
+  };
 
   const handleClearReviewed = async () => {
     // Archive every alert that has feedback set — clears them out of
@@ -630,6 +670,119 @@ export function AlertsView() {
       }
     });
   })();
+
+  // ── Keyboard shortcuts ─────────────────────────────────────────────
+  // j / k        — next / previous alert
+  // Enter / o    — open the selected alert detail
+  // e            — archive the selected alert
+  // r            — toggle read / unread (mark seen)
+  // p            — pin / unpin the selected alert
+  // /            — focus the search input
+  // Escape       — clear keyboard selection
+  //
+  // Skipped while the user is typing in any input/textarea/contenteditable
+  // element so the search box and dialogs aren't hijacked. This is the
+  // pattern Linear / Superhuman / GitHub all use; a compliance officer
+  // burning through 50 alerts/day will instinctively look for it.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Don't intercept when the user is typing in a form field.
+      const t = e.target as HTMLElement | null;
+      const tag = (t?.tagName || "").toLowerCase();
+      if (
+        tag === "input" ||
+        tag === "textarea" ||
+        tag === "select" ||
+        t?.isContentEditable
+      ) {
+        // Allow `/` to refocus search even from another input — but we're
+        // already in one, so do nothing.
+        return;
+      }
+      // Modifiers reserved for browser/OS shortcuts.
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      const list = filteredAlerts;
+      const len = list.length;
+      const cur = keyboardIdx;
+
+      switch (e.key) {
+        case "j":
+        case "ArrowDown": {
+          if (len === 0) return;
+          e.preventDefault();
+          setKeyboardIdx((i) => (i < 0 ? 0 : Math.min(i + 1, len - 1)));
+          break;
+        }
+        case "k":
+        case "ArrowUp": {
+          if (len === 0) return;
+          e.preventDefault();
+          setKeyboardIdx((i) => (i <= 0 ? 0 : i - 1));
+          break;
+        }
+        case "Enter":
+        case "o": {
+          if (cur < 0 || cur >= len) return;
+          e.preventDefault();
+          navigate(`/alerts/${list[cur].id}`);
+          break;
+        }
+        case "e": {
+          if (cur < 0 || cur >= len) return;
+          e.preventDefault();
+          handleArchive(list[cur].id);
+          // The row about to disappear — keep the same index so the
+          // user lands on the next row down naturally.
+          break;
+        }
+        case "r": {
+          if (cur < 0 || cur >= len) return;
+          e.preventDefault();
+          toggleSeen(list[cur].id);
+          break;
+        }
+        case "p": {
+          if (cur < 0 || cur >= len) return;
+          e.preventDefault();
+          togglePin(list[cur].id);
+          break;
+        }
+        case "/": {
+          // Focus the search input. Don't preventDefault until we know
+          // the input is there, so falling through still works.
+          const search = document.querySelector<HTMLInputElement>(
+            'input[type="search"], input[placeholder^="Search alerts"]',
+          );
+          if (search) {
+            e.preventDefault();
+            search.focus();
+            search.select();
+          }
+          break;
+        }
+        case "Escape": {
+          if (cur >= 0) {
+            e.preventDefault();
+            setKeyboardIdx(-1);
+          }
+          break;
+        }
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredAlerts, keyboardIdx]);
+
+  // Clamp the keyboard index when filtered list shrinks (e.g. user
+  // archives the selected row, or filter narrows it out of view).
+  useEffect(() => {
+    if (keyboardIdx >= filteredAlerts.length) {
+      setKeyboardIdx(filteredAlerts.length > 0 ? filteredAlerts.length - 1 : -1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredAlerts.length]);
 
   if (loading) {
     return (
@@ -821,6 +974,32 @@ export function AlertsView() {
                 <SelectItem value="relevance-low">Lowest relevance</SelectItem>
               </SelectContent>
             </Select>
+
+            {/* Export current filtered view as CSV. The backend
+                endpoint mirrors the same auth + status filter the
+                inbox uses; auditors get a stable column order they
+                can sort/pivot in Excel. */}
+            <Button
+              variant="outline"
+              onClick={handleExportCsv}
+              className="gap-2"
+              aria-label="Export alerts as CSV"
+            >
+              <Download className="size-4" />
+              Export CSV
+            </Button>
+
+            {/* Keyboard hint — small, muted. Pro tools earn their
+                "feels fast" reputation here. */}
+            <span
+              className="hidden lg:inline text-muted-foreground select-none"
+              style={{ fontSize: "var(--text-xs)" }}
+              title="Keyboard shortcuts: j/k navigate · Enter open · e archive · r mark read · p pin · / search"
+            >
+              <kbd className="px-1.5 py-0.5 rounded border bg-muted">j</kbd>
+              <kbd className="px-1.5 py-0.5 rounded border bg-muted ml-1">k</kbd>
+              <span className="ml-1">to navigate</span>
+            </span>
           </div>
         </div>
 
@@ -923,9 +1102,10 @@ export function AlertsView() {
                 </TableCell>
               </TableRow>
             ) : (
-              filteredAlerts.map((alert) => {
+              filteredAlerts.map((alert, idx) => {
                 const isReviewed = !!alert.userFeedback;
                 const isUnread = alert.status === "new" && !isReviewed;
+                const isKeyboardFocused = idx === keyboardIdx;
                 // Three visual tiers:
                 //   reviewed (feedback set): heavy fade — done with it
                 //   read (status=read, no feedback): light fade — seen but not dispositioned
@@ -943,10 +1123,20 @@ export function AlertsView() {
                   ? "relative bg-primary/5 before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-1 before:bg-primary"
                   : "";
 
+                const keyboardCue = isKeyboardFocused
+                  ? "outline outline-2 outline-offset-[-2px] outline-primary"
+                  : "";
+
                 return (
                   <TableRow
                     key={alert.id}
-                    className={`${rowOpacity} ${unreadCue}`.trim()}
+                    ref={
+                      isKeyboardFocused
+                        ? (el) => el?.scrollIntoView({ block: "nearest" })
+                        : undefined
+                    }
+                    onClick={() => setKeyboardIdx(idx)}
+                    className={`${rowOpacity} ${unreadCue} ${keyboardCue}`.trim()}
                   >
                     {/* Single rich Alert cell — country flag inline,
                         title clickable, authority + chips below */}

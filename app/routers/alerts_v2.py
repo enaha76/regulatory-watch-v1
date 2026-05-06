@@ -15,12 +15,17 @@ from __future__ import annotations
 from typing import Optional
 from uuid import UUID
 
+import csv
+import io
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from app.database import get_session
-from app.models import Alert, ChangeEvent, UserSubscription
+from app.models import Alert, ChangeEvent, Obligation, UserSubscription
 from app.services.alert_adapter import (
     build_frontend_alert,
     status_fe_to_be,
@@ -157,6 +162,116 @@ def list_alerts_v2(
         if len(out) >= limit:
             break
     return out
+
+
+@router.get("/export.csv")
+def export_alerts_csv(
+    email: Optional[str] = Query(default=None),
+    status: Optional[str] = Query(default=None, pattern="^(new|read|archived)$"),
+    session: Session = Depends(get_session),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Export the calling user's alerts as a CSV file. Same auth + filter
+    semantics as `GET /api/v2/alerts` (the list endpoint), but without
+    the inbox dedup — auditors generally want every row, including
+    duplicates from multiple subscriptions, so they can reconcile against
+    their own systems.
+
+    Columns are stable and ordered for downstream Excel/Sheets imports.
+    Includes a deadline summary derived from the obligations rollup so
+    a reviewer can sort by "next deadline" in their spreadsheet.
+    """
+    target_email: Optional[str]
+    if email == "*":
+        if not user.has_role("admin"):
+            raise HTTPException(403, detail="Admin role required for ?email=*")
+        target_email = None
+    elif email is not None and email != user.email:
+        if not user.has_role("admin"):
+            raise HTTPException(
+                403, detail="Admin role required to export another user's alerts",
+            )
+        target_email = email
+    else:
+        target_email = user.email
+
+    stmt = select(Alert).order_by(Alert.created_at.desc()).limit(5000)
+    if target_email is not None:
+        sub_ids = list(
+            session.exec(
+                select(UserSubscription.id).where(
+                    UserSubscription.user_email == target_email
+                )
+            ).all()
+        )
+        if not sub_ids:
+            sub_ids = []
+        stmt = stmt.where(Alert.subscription_id.in_(sub_ids))
+    if status:
+        stmt = stmt.where(Alert.status == status_fe_to_be(status))
+
+    buf = io.StringIO()
+    w = csv.writer(buf, quoting=csv.QUOTE_MINIMAL)
+    w.writerow([
+        "alert_id", "created_at", "status", "user_feedback", "pinned",
+        "title", "country", "authority", "regulation_type",
+        "publication_date", "relevance_score", "trade_lane",
+        "affected_products", "summary", "next_deadline",
+        "obligation_count", "source_url",
+    ])
+
+    for alert in session.exec(stmt).all():
+        event = session.get(ChangeEvent, alert.change_event_id)
+        if event is None:
+            continue
+        row = build_frontend_alert(
+            session, alert, event, include_summary_bullets=True,
+        )
+        # Earliest non-null deadline across the obligations rollup.
+        next_deadline = ""
+        obs = session.exec(
+            select(Obligation)
+            .where(Obligation.change_event_id == event.id)
+            .where(Obligation.deadline_date.is_not(None))  # type: ignore[union-attr]
+            .order_by(Obligation.deadline_date.asc())  # type: ignore[union-attr]
+            .limit(1)
+        ).first()
+        if obs and obs.deadline_date:
+            next_deadline = obs.deadline_date.isoformat()
+        ob_count = session.exec(
+            select(Obligation.id).where(Obligation.change_event_id == event.id)
+        ).all()
+        summary_text = " ".join(row.get("summary") or []) or (event.summary or "")
+        w.writerow([
+            row.get("id", ""),
+            alert.created_at.isoformat() if alert.created_at else "",
+            row.get("status", ""),
+            row.get("userFeedback") or "",
+            "yes" if row.get("pinned") else "no",
+            row.get("title", ""),
+            row.get("country", ""),
+            row.get("authority", ""),
+            row.get("regulationType", ""),
+            row.get("publicationDate", ""),
+            row.get("relevanceScore", ""),
+            row.get("tradeLane", ""),
+            "; ".join(row.get("affectedProducts") or []),
+            summary_text,
+            next_deadline,
+            len(ob_count),
+            row.get("sourceUrl", ""),
+        ])
+
+    buf.seek(0)
+    filename = f"regwatch-alerts-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M')}.csv"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
 
 
 @router.get("/{alert_id}", response_model=dict)
