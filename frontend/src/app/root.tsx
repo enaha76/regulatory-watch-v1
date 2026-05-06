@@ -13,7 +13,14 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/app/components/ui/sidebar";
-import { Inbox, Archive, Target, Globe, Search } from "lucide-react";
+import {
+  Inbox,
+  Archive,
+  Target,
+  Globe,
+  Search,
+  Coins,
+} from "lucide-react";
 import { Badge } from "@/app/components/ui/badge";
 import {
   NotificationsProvider,
@@ -43,6 +50,7 @@ function RootInner() {
     if (location.pathname === "/regulatory-search") return "regulatory-search";
     if (location.pathname === "/areas-of-interest") return "areas-of-interest";
     if (location.pathname === "/sources") return "sources";
+    if (location.pathname === "/costs") return "costs";
     return "inbox";
   });
 
@@ -52,6 +60,7 @@ function RootInner() {
     else if (location.pathname === "/regulatory-search") setActiveView("regulatory-search");
     else if (location.pathname === "/areas-of-interest") setActiveView("areas-of-interest");
     else if (location.pathname === "/sources") setActiveView("sources");
+    else if (location.pathname === "/costs") setActiveView("costs");
   }, [location.pathname]);
 
   const handleNavigation = (view: string) => {
@@ -67,6 +76,7 @@ function RootInner() {
     if (activeView === "regulatory-search") return "Regulatory Search";
     if (activeView === "areas-of-interest") return "Areas of Interest";
     if (activeView === "sources") return "Sources";
+    if (activeView === "costs") return "LLM Costs";
     return "Inbox";
   };
 
@@ -75,13 +85,13 @@ function RootInner() {
       <Sidebar>
         <SidebarHeader>
           <div className="px-4 py-4">
-            <div className="flex items-center gap-3 mb-1">
+            <div className="flex items-center gap-3">
               <img
                 src={logoIcon}
                 alt="MyTower"
                 className="w-9 h-9 rounded-full shrink-0"
               />
-              <div className="flex flex-col leading-tight">
+              <div className="flex flex-col leading-tight min-w-0">
                 <h3
                   className="text-sidebar-foreground font-bold"
                   style={{ fontSize: "var(--text-lg)" }}
@@ -96,17 +106,11 @@ function RootInner() {
                 </span>
               </div>
             </div>
-            <h3
-              className="text-sidebar-foreground mt-3"
-              style={{ fontSize: "var(--text-base)" }}
+            <p
+              className="text-sidebar-foreground/60 mt-3"
+              style={{ fontSize: "var(--text-xs)" }}
             >
               Global Trade Monitor
-            </h3>
-            <p
-              className="text-sidebar-foreground/70"
-              style={{ fontSize: "var(--text-xs)", marginTop: "4px" }}
-            >
-              Regulatory alerts & tracking
             </p>
           </div>
         </SidebarHeader>
@@ -162,6 +166,15 @@ function RootInner() {
                   >
                     <Globe />
                     <span>Sources</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={activeView === "costs"}
+                    onClick={() => handleNavigation("costs")}
+                  >
+                    <Coins />
+                    <span>LLM Costs</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               </SidebarMenu>

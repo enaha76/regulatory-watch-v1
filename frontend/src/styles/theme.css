@@ -2,14 +2,21 @@
 
 :root {
   --font-size: 16px;
-  --text-xs: 0.75rem;
-  --text-sm: 0.875rem;
-  --text-base: 0.875rem;
-  --text-lg: 1.125rem;
-  --text-xl: 1.5rem;
-  --text-2xl: 2rem;
+  /* Tightened scale — bumped body and label sizes one step up from
+     the original Figma export. 14px body was cramped on dense tables;
+     15–16px reads cleanly without ballooning the layout. */
+  --text-xs: 0.8125rem;   /* 13px — micro labels, badge text */
+  --text-sm: 0.9375rem;   /* 15px — body text, buttons, inputs */
+  --text-base: 1rem;      /* 16px — headings (h3) */
+  --text-lg: 1.125rem;    /* 18px */
+  --text-xl: 1.5rem;      /* 24px */
+  --text-2xl: 2rem;       /* 32px */
 
-  --font-family-primary: "Calibri", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Inter via Google Fonts. Falls back to the OS-native UI font if
+     Inter hasn't loaded yet (or if offline). Calibri previously sat
+     first in the stack; on non-Windows systems that meant a random
+     fallback like Helvetica which looked dated. */
+  --font-family-primary: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 
   --background: rgba(255, 255, 255, 1);
   --foreground: rgba(47, 47, 47, 1);
@@ -47,7 +54,11 @@
   --sidebar-foreground: rgba(255, 255, 255, 1);
   --sidebar-primary: rgba(27, 42, 107, 1);
   --sidebar-primary-foreground: rgba(255, 255, 255, 1);
-  --sidebar-accent: rgba(27, 42, 107, 1);
+  /* Active menu item — a noticeably lighter shade of navy so the
+     selection is visible on the navy sidebar background. Earlier this
+     was the same navy as the background, making the active state
+     invisible. */
+  --sidebar-accent: rgba(58, 80, 170, 1);
   --sidebar-accent-foreground: rgba(255, 255, 255, 1);
   --sidebar-border: rgba(45, 60, 130, 1);
   --sidebar-ring: rgba(27, 42, 107, 1);
@@ -135,6 +146,16 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-family-primary);
+    /* Inter feature flags:
+         cv11 = single-storey "a" / "g" (cleaner)
+         ss01 = stylistic set 1 (rounder shapes)
+         ss03 = curved "L"
+       Kerning + ligatures default-on. Tabular nums opt-in via the
+       Tailwind `tabular-nums` class on numeric cells. */
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
 }
 

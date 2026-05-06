@@ -904,21 +904,16 @@ export function AlertsView() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead style={{ width: "40px" }}></TableHead>
-              <TableHead style={{ width: "84px" }}>Status</TableHead>
               <TableHead>Alert</TableHead>
-              <TableHead style={{ width: "120px" }}>Country</TableHead>
-              <TableHead style={{ width: "120px" }}>Trade Lane</TableHead>
-              <TableHead style={{ width: "150px" }}>Type</TableHead>
               <TableHead style={{ width: "120px" }}>Date</TableHead>
-              <TableHead style={{ width: "80px" }}>Relevance</TableHead>
-              <TableHead style={{ width: "240px" }}>Actions</TableHead>
+              <TableHead style={{ width: "100px" }}>Relevance</TableHead>
+              <TableHead style={{ width: "260px" }}>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredAlerts.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="h-24 text-center">
+                <TableCell colSpan={4} className="h-24 text-center">
                   <div className="flex flex-col items-center gap-2">
                     <Search className="size-8 text-muted-foreground" />
                     <p className="text-muted-foreground">
@@ -945,62 +940,37 @@ export function AlertsView() {
                     key={alert.id}
                     className={rowOpacity}
                   >
+                    {/* Single rich Alert cell — country flag inline,
+                        title clickable, authority + chips below */}
                     <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => togglePin(alert.id)}
-                        title={alert.pinned ? "Unpin alert" : "Pin to top"}
-                        className={
-                          alert.pinned ? "text-primary" : "text-muted-foreground"
-                        }
-                      >
-                        <Pin
-                          className={`size-4 ${alert.pinned ? "fill-current" : ""}`}
-                        />
-                      </Button>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-0.5">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => toggleSeen(alert.id)}
-                          title={
-                            alert.status === "new"
-                              ? "Mark as seen"
-                              : "Mark as new"
-                          }
-                        >
-                          {alert.status === "new" ? (
-                            <EyeOff className="size-4" />
-                          ) : (
-                            <Eye className="size-4" />
-                          )}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleArchive(alert.id)}
-                          title="Archive — remove from inbox"
-                          className="text-muted-foreground hover:text-foreground"
-                        >
-                          <Archive className="size-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="max-w-md">
-                        <div className="flex items-start gap-2">
-                          {alert.status === "new" && !isReviewed && (
-                            <Badge variant="default" className="shrink-0">
-                              New
-                            </Badge>
-                          )}
-                          <div>
+                      <div className="flex items-start gap-3 max-w-2xl">
+                        <div className="shrink-0 mt-0.5">
+                          {getCountryFlag(alert.country)}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start gap-2 flex-wrap">
+                            {alert.status === "new" && !isReviewed && (
+                              <Badge
+                                variant="default"
+                                className="shrink-0"
+                                style={{ fontSize: "var(--text-xs)" }}
+                              >
+                                New
+                              </Badge>
+                            )}
+                            {alert.pinned && (
+                              <Badge
+                                variant="outline"
+                                className="shrink-0 text-primary border-primary/30 gap-1"
+                                style={{ fontSize: "var(--text-xs)" }}
+                              >
+                                <Pin className="size-3 fill-current" />
+                                Pinned
+                              </Badge>
+                            )}
                             <p
                               onClick={() => navigate(`/alerts/${alert.id}`)}
-                              className="cursor-pointer hover:text-primary hover:underline"
+                              className="cursor-pointer hover:text-primary hover:underline truncate"
                               style={{
                                 fontWeight: isReviewed
                                   ? "var(--font-weight-normal)"
@@ -1009,30 +979,34 @@ export function AlertsView() {
                             >
                               {alert.title}
                             </p>
-                            <p
-                              className="text-muted-foreground"
-                              style={{
-                                fontSize: "var(--text-xs)",
-                                marginTop: "4px",
-                              }}
-                            >
+                          </div>
+                          <div
+                            className="flex items-center gap-2 flex-wrap text-muted-foreground mt-1"
+                            style={{ fontSize: "var(--text-xs)" }}
+                          >
+                            <span className="truncate max-w-[260px]">
                               {alert.authority}
-                            </p>
+                            </span>
+                            <span className="opacity-50">·</span>
+                            <span>{alert.country}</span>
+                            <span className="opacity-50">·</span>
+                            <Badge
+                              variant="outline"
+                              className="px-1.5 py-0 h-4"
+                              style={{ fontSize: "var(--text-xs)" }}
+                            >
+                              {alert.tradeLane}
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className="px-1.5 py-0 h-4"
+                              style={{ fontSize: "var(--text-xs)" }}
+                            >
+                              {alert.regulationType}
+                            </Badge>
                           </div>
                         </div>
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        {getCountryFlag(alert.country)}
-                        <span>{alert.country}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{alert.tradeLane}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{alert.regulationType}</Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground tabular-nums">
                       {alert.publicationDate ? (
@@ -1071,71 +1045,125 @@ export function AlertsView() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      {isReviewed ? (
-                        <div className="flex items-center gap-2">
-                          <Badge
-                            variant="outline"
-                            className="bg-muted text-muted-foreground border-muted-foreground/20"
-                          >
-                            {alert.userFeedback === "relevant" && (
-                              <>
-                                <ThumbsUp className="size-3 mr-1" />
-                                Relevant
-                              </>
-                            )}
-                            {alert.userFeedback === "not_relevant" && (
-                              <>
-                                <ThumbsDown className="size-3 mr-1" />
-                                Not Relevant
-                              </>
-                            )}
-                            {alert.userFeedback === "partially_relevant" && (
-                              <>
-                                <Clock className="size-3" />
-                              </>
-                            )}
-                          </Badge>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleUndoFeedback(alert.id)}
-                            className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                            title="Undo review"
-                          >
-                            <Undo2 className="size-3" />
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleFeedback(alert.id, "relevant")}
-                            className="border-accent text-accent hover:bg-accent hover:text-accent-foreground"
-                          >
-                            <ThumbsUp className="size-4" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() =>
-                              handleFeedback(alert.id, "not_relevant")
-                            }
-                          >
-                            <ThumbsDown className="size-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() =>
-                              handleFeedback(alert.id, "partially_relevant")
-                            }
-                            className="text-muted-foreground"
-                          >
-                            <Clock className="size-4" />
-                          </Button>
-                        </div>
-                      )}
+                      {/* Two button groups separated by a thin divider:
+                          row-state actions on the left (pin/seen/archive),
+                          review actions on the right (thumbs / undo). */}
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => togglePin(alert.id)}
+                          title={alert.pinned ? "Unpin alert" : "Pin to top"}
+                          className={`h-8 w-8 ${
+                            alert.pinned
+                              ? "text-primary"
+                              : "text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          <Pin
+                            className={`size-4 ${alert.pinned ? "fill-current" : ""}`}
+                          />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => toggleSeen(alert.id)}
+                          title={
+                            alert.status === "new"
+                              ? "Mark as seen"
+                              : "Mark as new"
+                          }
+                          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        >
+                          {alert.status === "new" ? (
+                            <EyeOff className="size-4" />
+                          ) : (
+                            <Eye className="size-4" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleArchive(alert.id)}
+                          title="Archive — remove from inbox"
+                          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        >
+                          <Archive className="size-4" />
+                        </Button>
+
+                        <div className="w-px h-5 bg-border mx-1" />
+
+                        {isReviewed ? (
+                          <>
+                            <Badge
+                              variant="outline"
+                              className="bg-muted text-muted-foreground border-muted-foreground/20 h-7"
+                            >
+                              {alert.userFeedback === "relevant" && (
+                                <>
+                                  <ThumbsUp className="size-3 mr-1" />
+                                  Relevant
+                                </>
+                              )}
+                              {alert.userFeedback === "not_relevant" && (
+                                <>
+                                  <ThumbsDown className="size-3 mr-1" />
+                                  Not relevant
+                                </>
+                              )}
+                              {alert.userFeedback === "partially_relevant" && (
+                                <>
+                                  <Clock className="size-3 mr-1" />
+                                  Partial
+                                </>
+                              )}
+                            </Badge>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleUndoFeedback(alert.id)}
+                              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                              title="Undo review"
+                            >
+                              <Undo2 className="size-3" />
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleFeedback(alert.id, "relevant")}
+                              title="Mark relevant"
+                              className="h-8 w-8 hover:bg-accent/15 hover:text-accent"
+                            >
+                              <ThumbsUp className="size-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() =>
+                                handleFeedback(alert.id, "partially_relevant")
+                              }
+                              title="Partially relevant"
+                              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                            >
+                              <Clock className="size-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() =>
+                                handleFeedback(alert.id, "not_relevant")
+                              }
+                              title="Not relevant"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                            >
+                              <ThumbsDown className="size-4" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 );

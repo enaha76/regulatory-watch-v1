@@ -1,11 +1,16 @@
 """
 Admin endpoints used by the mock-website admin UI to drive end-to-end tests.
 
-POST /api/admin/trigger-crawl  — enqueue a web_crawl_task against the mock website
-GET  /api/admin/task/{task_id} — check a Celery task's status
+POST /api/admin/trigger-crawl   — enqueue a web_crawl_task
+GET  /api/admin/task/{task_id}  — check a Celery task's status
+GET  /api/admin/cost-report     — LLM token usage + spend report
 """
 
-from fastapi import APIRouter, HTTPException
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from app.config import get_settings
@@ -85,3 +90,55 @@ def get_task_status(task_id: str):
         if isinstance(info, dict):
             payload["progress"] = info
     return payload
+
+
+@router.get("/cost-report")
+def get_cost_report(
+    since: Optional[str] = Query(
+        default=None,
+        description="ISO date YYYY-MM-DD — only include records on/after this date",
+    ),
+    scope: Optional[str] = Query(
+        default=None,
+        pattern="^(scoring|obligations|web_extract)$",
+        description="Filter by usage scope",
+    ),
+):
+    """
+    LLM token-usage and spend report.
+
+    Reads the append-only ledger written by every M4 LLM call (scoring,
+    obligations, web extraction) and returns aggregated totals plus
+    breakdowns by scope, model, and day, plus the 5 most expensive
+    individual calls.
+    """
+    from app.services.llm_cost import load_report
+
+    settings = get_settings()
+    ledger = Path(settings.LLM_USAGE_LEDGER_PATH)
+    # The ledger path is relative to the working dir at startup. The
+    # Docker image's WORKDIR is /opt/app; resolve from there if the
+    # path isn't absolute.
+    if not ledger.is_absolute():
+        candidate = Path("/opt/app") / ledger
+        ledger = candidate if candidate.exists() else Path.cwd() / ledger
+
+    parsed_since: Optional[datetime] = None
+    if since:
+        try:
+            parsed_since = datetime.fromisoformat(since).replace(
+                tzinfo=timezone.utc
+            )
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid `since` value '{since}' — expected YYYY-MM-DD",
+            )
+
+    report = load_report(ledger, since=parsed_since, scope=scope)
+    return {
+        "ledgerPath": str(ledger),
+        "ledgerExists": ledger.exists(),
+        "filters": {"since": since, "scope": scope},
+        **report,
+    }

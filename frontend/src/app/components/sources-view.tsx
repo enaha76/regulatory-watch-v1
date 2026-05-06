@@ -394,6 +394,68 @@ const CrawlLogRow = React.memo(function CrawlLogRow({
   );
 });
 
+/**
+ * Compact stat tile for the Sources page header strip.
+ *
+ * Visually leaner than the previous "Bootstrap card" layout — a thin
+ * left accent rule, an icon chip, then a big number. Reads as a status
+ * banner instead of a 2010s admin dashboard.
+ */
+function StatTile({
+  icon,
+  label,
+  value,
+  tone,
+  dim = false,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number | string;
+  tone: "primary" | "accent" | "muted";
+  dim?: boolean;
+}) {
+  const accent =
+    tone === "primary"
+      ? "before:bg-primary [&_.icon]:bg-primary/10 [&_.icon]:text-primary"
+      : tone === "accent"
+        ? "before:bg-accent [&_.icon]:bg-accent/10 [&_.icon]:text-accent"
+        : "before:bg-muted-foreground/30 [&_.icon]:bg-muted [&_.icon]:text-muted-foreground";
+
+  return (
+    <div
+      className={`relative rounded-md border bg-card pl-4 pr-4 py-3 overflow-hidden
+        before:content-[''] before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:rounded-r-sm
+        ${accent} ${dim ? "opacity-60" : ""}`}
+    >
+      <div className="flex items-center gap-3">
+        <div className="icon size-7 rounded-md flex items-center justify-center shrink-0">
+          {icon}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p
+            className="text-muted-foreground uppercase tracking-wider truncate"
+            style={{
+              fontSize: "var(--text-xs)",
+              fontWeight: "var(--font-weight-medium)",
+            }}
+          >
+            {label}
+          </p>
+          <p
+            className="tabular-nums leading-tight"
+            style={{
+              fontSize: "var(--text-xl)",
+              fontWeight: "var(--font-weight-medium)",
+            }}
+          >
+            {value}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function SourcesView() {
   const { notify, refreshUnread, unreadCount, unreadAlerts } =
     useNotifications();
@@ -1113,79 +1175,35 @@ export function SourcesView() {
         </Dialog>
       </div>
 
-      <div className="grid grid-cols-4 gap-4">
-        <div className="rounded-md border bg-card p-4">
-          <div className="flex items-center gap-2">
-            <Globe className="size-5 text-primary" />
-            <div>
-              <p className="text-muted-foreground" style={{ fontSize: "var(--text-xs)" }}>
-                Active Sources
-              </p>
-              <p
-                style={{
-                  fontSize: "var(--text-xl)",
-                  fontWeight: "var(--font-weight-medium)",
-                }}
-              >
-                {activeSourcesCount}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="rounded-md border bg-card p-4">
-          <div className="flex items-center gap-2">
-            <Bell className="size-5 text-accent" />
-            <div>
-              <p className="text-muted-foreground" style={{ fontSize: "var(--text-xs)" }}>
-                Subscribed Sources
-              </p>
-              <p
-                style={{
-                  fontSize: "var(--text-xl)",
-                  fontWeight: "var(--font-weight-medium)",
-                }}
-              >
-                {subscribedSourcesCount}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="rounded-md border bg-card p-4">
-          <div className="flex items-center gap-2">
-            <FileText className="size-5 text-muted-foreground" />
-            <div>
-              <p className="text-muted-foreground" style={{ fontSize: "var(--text-xs)" }}>
-                Total Items Monitored
-              </p>
-              <p
-                style={{
-                  fontSize: "var(--text-xl)",
-                  fontWeight: "var(--font-weight-medium)",
-                }}
-              >
-                {totalActivityCount.toLocaleString()}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="rounded-md border bg-card p-4">
-          <div className="flex items-center gap-2">
-            <Clock className="size-5 text-muted-foreground" />
-            <div>
-              <p className="text-muted-foreground" style={{ fontSize: "var(--text-xs)" }}>
-                Inactive Sources
-              </p>
-              <p
-                style={{
-                  fontSize: "var(--text-xl)",
-                  fontWeight: "var(--font-weight-medium)",
-                }}
-              >
-                {sources.length - activeSourcesCount}
-              </p>
-            </div>
-          </div>
-        </div>
+      {/* Stat strip — single row of large-number tiles, each with a
+          subtle accent. Reads like a status banner instead of four
+          identical Bootstrap cards. */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <StatTile
+          icon={<Globe className="size-4" />}
+          label="Active sources"
+          value={activeSourcesCount}
+          tone="primary"
+        />
+        <StatTile
+          icon={<Bell className="size-4" />}
+          label="Receiving alerts"
+          value={subscribedSourcesCount}
+          tone="accent"
+        />
+        <StatTile
+          icon={<FileText className="size-4" />}
+          label="Items monitored"
+          value={totalActivityCount.toLocaleString()}
+          tone="muted"
+        />
+        <StatTile
+          icon={<Clock className="size-4" />}
+          label="Inactive"
+          value={sources.length - activeSourcesCount}
+          tone="muted"
+          dim={sources.length - activeSourcesCount === 0}
+        />
       </div>
 
       <div className="flex items-center gap-4">

@@ -15,7 +15,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/app/components/ui/card";
-import { Textarea } from "@/app/components/ui/textarea";
 import {
   ArrowLeft,
   ExternalLink,
@@ -23,26 +22,17 @@ import {
   MapPin,
   FileText,
   Download,
-  MessageSquare,
-  Send,
-  CheckCircle2,
-  Info,
   GitCompare,
   ListChecks,
   AlertTriangle,
   Clock,
   Users,
+  Sparkles,
 } from "lucide-react";
 import { IN, CN, EU, US } from "country-flag-icons/react/3x2";
 
 // Detail page reuses the API model — adds summary[], sourceUrl, pdfUrl?.
 type Alert = ApiAlertDetail;
-
-interface ChatMessage {
-  role: "user" | "assistant";
-  content: string;
-  timestamp: Date;
-}
 
 // Dev-only fallback used when the API isn't reachable (e.g. backend down).
 const mockAlerts: Alert[] = [
@@ -648,9 +638,6 @@ function DiffBody({
 export function AlertDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [userInput, setUserInput] = useState("");
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [alert, setAlert] = useState<Alert | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -735,39 +722,6 @@ export function AlertDetail() {
     return "bg-muted text-muted-foreground";
   };
 
-  const handleSendMessage = async () => {
-    if (!userInput.trim() || !alert) return;
-
-    const userMessage: ChatMessage = {
-      role: "user",
-      content: userInput,
-      timestamp: new Date(),
-    };
-
-    setChatMessages((prev) => [...prev, userMessage]);
-    setUserInput("");
-    setIsAnalyzing(true);
-
-    setTimeout(() => {
-      const assistantMessage: ChatMessage = {
-        role: "assistant",
-        content: generateMockResponse(userInput, alert),
-        timestamp: new Date(),
-      };
-      setChatMessages((prev) => [...prev, assistantMessage]);
-      setIsAnalyzing(false);
-    }, 1500);
-  };
-
-  const generateMockResponse = (_question: string, alert: Alert): string => {
-    const responses = [
-      `Based on the regulation "${alert.title}" from ${alert.authority}, here's my analysis:\n\nThis change could impact your business in several ways:\n\n1. **Supply Chain**: You may need to adjust your sourcing strategy for products under HS codes ${alert.affectedProducts.join(", ")}.\n\n2. **Compliance Timeline**: The effective date is ${new Date(alert.publicationDate).toLocaleDateString()}, giving you time to prepare.\n\n3. **Cost Implications**: Depending on your import volumes, this could affect pricing and margins.\n\nWould you like me to analyze specific aspects in more detail?`,
-      `Let me help you understand the business impact:\n\n**Direct Effects:**\n- Products classified as ${alert.affectedProducts.join(", ")} will be affected\n- This is a ${alert.regulationType} regulation, which typically requires procedural changes\n\n**Recommended Actions:**\n1. Review your current inventory of affected products\n2. Contact your compliance team to assess documentation requirements\n3. Engage with your suppliers to understand their readiness\n\nWhat specific area would you like to explore further?`,
-    ];
-
-    return responses[Math.floor(Math.random() * responses.length)];
-  };
-
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between">
@@ -787,6 +741,10 @@ export function AlertDetail() {
             <div className="flex-1">
               <CardTitle className="text-2xl mb-2">{alert.title}</CardTitle>
               <CardDescription className="flex flex-wrap gap-4 text-base">
+                <span className="flex items-center gap-2">
+                  <FileText className="size-4" />
+                  {alert.authority}
+                </span>
                 <span className="flex items-center gap-2">
                   <MapPin className="size-4" />
                   {alert.country}
@@ -817,14 +775,8 @@ export function AlertDetail() {
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <FileText className="size-5 text-muted-foreground" />
-              <h3 className="font-semibold">Authority</h3>
-            </div>
-            <p className="text-muted-foreground">{alert.authority}</p>
-          </div>
-
+          {/* Authority is already shown in the card header's meta row;
+              repeating it as its own section was duplication. */}
           <div>
             <h3 className="font-semibold mb-3 text-lg">Summary</h3>
             <div className="rounded-md border-l-4 border-primary bg-primary/5 p-4 space-y-3">
@@ -878,186 +830,51 @@ export function AlertDetail() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <MessageSquare className="size-5" />
-            <CardTitle>Business Impact Analysis</CardTitle>
-          </div>
-          <CardDescription>
-            Ask questions about how this regulation might affect your business
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="rounded-lg border bg-muted/50 p-4">
-            <div className="flex items-start gap-3">
-              <CheckCircle2 className="size-5 text-accent shrink-0 mt-0.5" />
-              <div className="flex-1 space-y-3">
-                <div>
-                  <p
-                    style={{ fontWeight: "var(--font-weight-medium)" }}
-                    className="mb-1"
-                  >
-                    AI Context Pre-loaded
-                  </p>
-                  <p
-                    className="text-muted-foreground"
-                    style={{ fontSize: "var(--text-xs)" }}
-                  >
-                    The assistant already has full context about this regulation
-                    and is ready to answer your questions
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline" className="bg-background">
-                    <FileText className="size-3 mr-1" />
-                    Full Document
-                  </Badge>
-                  <Badge variant="outline" className="bg-background">
-                    <MapPin className="size-3 mr-1" />
-                    {alert.country}
-                  </Badge>
-                  <Badge variant="outline" className="bg-background">
-                    <Calendar className="size-3 mr-1" />
-                    {new Date(alert.publicationDate).toLocaleDateString()}
-                  </Badge>
-                  <Badge variant="outline" className="bg-background">
-                    Products: {alert.affectedProducts.join(", ")}
-                  </Badge>
-                  <Badge variant="outline" className="bg-background">
-                    Type: {alert.regulationType}
-                  </Badge>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {chatMessages.length === 0 ? (
-            <div className="space-y-4">
-              <div className="text-center py-6 text-muted-foreground">
-                <MessageSquare className="size-12 mx-auto mb-3 opacity-50" />
-                <p className="mb-2">
-                  Start a conversation to analyze business impact
-                </p>
-              </div>
-              <div>
-                <p
-                  className="text-muted-foreground mb-3"
-                  style={{ fontSize: "var(--text-xs)" }}
-                >
-                  Suggested questions:
-                </p>
-                <div className="grid grid-cols-1 gap-2">
-                  <Button
-                    variant="outline"
-                    className="justify-start text-left h-auto py-3"
-                    onClick={() =>
-                      setUserInput(
-                        "What are the key compliance requirements and deadlines we need to be aware of?",
-                      )
-                    }
-                  >
-                    <Info className="size-4 mr-2 shrink-0" />
-                    <span className="text-sm">
-                      What are the key compliance requirements and deadlines?
-                    </span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="justify-start text-left h-auto py-3"
-                    onClick={() =>
-                      setUserInput(
-                        "How might this regulation impact our import costs and supply chain?",
-                      )
-                    }
-                  >
-                    <Info className="size-4 mr-2 shrink-0" />
-                    <span className="text-sm">
-                      How might this impact our import costs and supply chain?
-                    </span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="justify-start text-left h-auto py-3"
-                    onClick={() =>
-                      setUserInput(
-                        "What documentation and certifications will we need to prepare?",
-                      )
-                    }
-                  >
-                    <Info className="size-4 mr-2 shrink-0" />
-                    <span className="text-sm">
-                      What documentation and certifications do we need to prepare?
-                    </span>
-                  </Button>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-4 max-h-96 overflow-y-auto">
-              {chatMessages.map((message, idx) => (
-                <div
-                  key={idx}
-                  className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-                >
-                  <div
-                    className={`max-w-[80%] rounded-lg p-3 ${
-                      message.role === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-foreground"
-                    }`}
-                  >
-                    <p className="whitespace-pre-line">{message.content}</p>
-                    <p
-                      className={`text-xs mt-1 ${
-                        message.role === "user"
-                          ? "opacity-80"
-                          : "text-muted-foreground"
-                      }`}
-                    >
-                      {message.timestamp.toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </p>
-                  </div>
-                </div>
-              ))}
-              {isAnalyzing && (
-                <div className="flex justify-start">
-                  <div className="bg-muted rounded-lg p-3">
-                    <p className="text-muted-foreground">Analyzing...</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className="flex gap-2">
-            <Textarea
-              placeholder="E.g., How will this affect our import costs? What documentation do we need to prepare?"
-              value={userInput}
-              onChange={(e) => setUserInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSendMessage();
-                }
-              }}
-              className="min-h-20 resize-none"
-              disabled={isAnalyzing}
-            />
-            <Button
-              onClick={handleSendMessage}
-              disabled={!userInput.trim() || isAnalyzing}
-              size="icon"
-              className="shrink-0"
-            >
-              <Send className="size-4" />
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Floating "Ask AI" affordance — sits above the page content
+          at bottom-right, doesn't dominate the layout. Animated
+          gradient + sparkle is intentionally a bit playful so it
+          *looks* alive even though the LLM endpoint isn't wired yet.
+          When it lands we swap the disabled cursor for a real click
+          handler and slide out a chat panel. */}
+      <AskAIPlaceholder />
     </div>
   );
 }
+
+function AskAIPlaceholder() {
+  return (
+    <div className="fixed bottom-6 right-6 z-30 group" aria-hidden="false">
+      <button
+        type="button"
+        disabled
+        title="AI assistant — coming soon"
+        aria-label="Ask AI about this alert (coming soon)"
+        className="
+          relative inline-flex items-center gap-2 rounded-full
+          px-4 py-2.5 cursor-not-allowed
+          bg-gradient-to-r from-primary via-primary to-accent
+          text-primary-foreground shadow-lg shadow-primary/30
+          transition-transform hover:scale-[1.02]
+          before:absolute before:inset-0 before:rounded-full
+          before:bg-gradient-to-r before:from-primary/0 before:via-white/20 before:to-primary/0
+          before:opacity-0 before:transition-opacity before:duration-700
+          group-hover:before:opacity-100
+        "
+        style={{ fontSize: "var(--text-sm)", fontWeight: "var(--font-weight-medium)" }}
+      >
+        <Sparkles
+          className="size-4 animate-pulse"
+          style={{ animationDuration: "2.4s" }}
+        />
+        <span>Ask AI</span>
+        <span
+          className="rounded-full bg-white/20 px-2 py-0.5 leading-none tabular-nums"
+          style={{ fontSize: "var(--text-xs)" }}
+        >
+          soon
+        </span>
+      </button>
+    </div>
+  );
+}
+
