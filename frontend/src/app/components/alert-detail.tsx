@@ -437,6 +437,74 @@ function DiffSection({ diff }: { diff: AlertDiff }) {
  */
 type DiffHunk = { removed: string[]; added: string[] };
 
+// Patterns that mark a line as cosmetic (page chrome, footer
+// timestamps, language-switcher entries, etc.). Mirrors the backend's
+// extractor blacklist — kept here as a UI-side defense so legacy
+// alerts crawled before the backend filter was tightened still
+// render cleanly.
+const _COSMETIC_LINE_PATTERNS: RegExp[] = [
+  /last updated/i,
+  /visitor count/i,
+  /browser and display compatibility/i,
+  /powered by/i,
+  /rate this translation/i,
+  /would you like to provide feedback/i,
+  /external site that opens in a new window/i,
+  /^\s*website policy\s*$/i,
+  /^\s*terms (?:and|&) conditions\s*$/i,
+  /^\s*disclaimer\s*$/i,
+  // Language-switcher entries from multilingual gov sites:
+  // "Hindi (हिन्दी)", "Bengali (বাংলা)", "Tamil (தமிழ்)".
+  /^\s*[A-Za-z][A-Za-z ]{1,30}\s*\([^A-Za-z\s)]{1,40}\)\s*$/,
+  // Bare timestamp + counter footer rows.
+  /^\s*\d{1,2}[-/]\d{1,2}[-/]\d{2,4}\s*\|\s*\d{2,}/,
+];
+
+function _isCosmeticLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return true;
+  return _COSMETIC_LINE_PATTERNS.some((rx) => rx.test(trimmed));
+}
+
+function _normalizeForCompare(line: string): string {
+  // Collapse internal whitespace and strip markdown emphasis so a hunk
+  // that's the same paragraph re-emitted in a different DOM position
+  // (no real change) classifies as cosmetic instead of substantive.
+  return line.replace(/\s+/g, " ").replace(/[*_`~]+/g, "").trim();
+}
+
+/**
+ * Classify a hunk as cosmetic when:
+ *   (a) every non-blank line matches a known chrome pattern, OR
+ *   (b) the set of removed lines equals the set of added lines after
+ *       whitespace/emphasis normalisation — i.e. the content was just
+ *       shifted around in the DOM and isn't a real edit.
+ *
+ * Returning `false` means the hunk has real content the user should
+ * see; returning `true` lets the UI fold it behind a "Show formatting
+ * changes" toggle.
+ */
+function isCosmeticHunk(h: DiffHunk): boolean {
+  const allLines = [...h.added, ...h.removed].filter((l) => l.trim());
+  if (allLines.length === 0) return true;
+
+  if (allLines.every(_isCosmeticLine)) return true;
+
+  const removedKey = h.removed
+    .map(_normalizeForCompare)
+    .filter(Boolean)
+    .sort()
+    .join("\n");
+  const addedKey = h.added
+    .map(_normalizeForCompare)
+    .filter(Boolean)
+    .sort()
+    .join("\n");
+  if (removedKey && removedKey === addedKey) return true;
+
+  return false;
+}
+
 function parseHunks(patch: string): DiffHunk[] {
   const hunks: DiffHunk[] = [];
   let current: DiffHunk | null = null;
@@ -478,8 +546,17 @@ function DiffReadable({
   patch: string;
   borderClass: string;
 }) {
-  const hunks = parseHunks(patch);
-  if (hunks.length === 0) {
+  const allHunks = parseHunks(patch);
+  // Split material vs cosmetic so the user sees the actual change at
+  // the top and can opt-in to the formatting noise. On dgft.gov.in's
+  // page-listing pages a single new notification produced ~10 lines
+  // of real diff drowning in ~70 lines of footer / language-switcher
+  // / boilerplate churn — this fold is what makes that legible.
+  const materialHunks = allHunks.filter((h) => !isCosmeticHunk(h));
+  const cosmeticHunks = allHunks.filter((h) => isCosmeticHunk(h));
+  const [showCosmetic, setShowCosmetic] = useState(false);
+
+  if (allHunks.length === 0) {
     return (
       <p
         className="text-muted-foreground"
@@ -489,6 +566,10 @@ function DiffReadable({
       </p>
     );
   }
+
+  const hunks = showCosmetic ? allHunks : materialHunks;
+  const cosmeticCount = cosmeticHunks.length;
+  const onlyCosmetic = materialHunks.length === 0 && cosmeticCount > 0;
 
   const collapseBlanks = (lines: string[]) => {
     const out: string[] = [];
@@ -508,6 +589,28 @@ function DiffReadable({
 
   return (
     <div className={`rounded-md border ${borderClass} bg-card`}>
+      {/* Empty material list — page chrome only — tell the user the
+          hunks are folded but reachable. */}
+      {onlyCosmetic && !showCosmetic && (
+        <div className="px-4 py-3">
+          <p
+            className="text-muted-foreground"
+            style={{ fontSize: "var(--text-sm)" }}
+          >
+            No material text changes in this revision — only
+            page-formatting / footer / boilerplate churn ({cosmeticCount}{" "}
+            cosmetic {cosmeticCount === 1 ? "block" : "blocks"}).
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowCosmetic(true)}
+            className="mt-2 -ml-2"
+          >
+            Show formatting changes
+          </Button>
+        </div>
+      )}
       {hunks.map((h, idx) => (
         <div
           key={idx}
@@ -561,6 +664,33 @@ function DiffReadable({
           )}
         </div>
       ))}
+      {/* Mixed case: real changes were shown above; let the user
+          expand the cosmetic ones if they want full provenance. */}
+      {!onlyCosmetic && cosmeticCount > 0 && (
+        <div className="border-t px-4 py-3">
+          {!showCosmetic ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowCosmetic(true)}
+              className="-ml-2 text-muted-foreground"
+            >
+              Show {cosmeticCount} formatting{" "}
+              {cosmeticCount === 1 ? "change" : "changes"} (footer / chrome /
+              boilerplate)
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowCosmetic(false)}
+              className="-ml-2 text-muted-foreground"
+            >
+              Hide formatting changes
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

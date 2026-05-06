@@ -127,6 +127,46 @@ _SKIP_LINE_MARKERS: tuple[str, ...] = (
     "did you find what you were looking for",
     "rate your experience",
     "tell us what you think",
+    # Footer chrome — page-update timestamps and visitor counters
+    # increment on every fetch and produced spurious diff hunks on
+    # dgft.gov.in. Match liberally; the substring "last updated"
+    # combined with "visitor count" appears in pure footer rows.
+    "last updated",
+    "visitor count",
+    "browser and display compatibility",
+    # Multilingual switcher / translation chrome (dgft.gov.in routes
+    # users through a Google Translate widget that spelt-out language
+    # names in English + native script). When any of these phrases is
+    # on its own line, it's part of the language picker, not content.
+    "powered by",
+    "rate this translation",
+    "would you like to provide feedback",
+    "external site that opens in a new window",
+    # Site-wide footer link clusters that get re-ordered between
+    # crawls and add nothing to a regulatory diff.
+    "website policy",
+    "terms & conditions",
+    "terms and conditions",
+)
+
+
+# Lines that match these regexes (anchored full-line) are also dropped.
+# Keep them tight — false positives steal real content.
+_SKIP_LINE_REGEXES: tuple[re.Pattern[str], ...] = (
+    # Language-switcher rows from dgft.gov.in's multilingual menu —
+    # "Hindi (हिन्दी)", "Bengali (বাংলা)", "Tamil (தமிழ்)", etc. The
+    # pattern: an English word, optional second word, then a paren
+    # group containing a non-Latin script. We don't enumerate the
+    # languages so the same filter works for any Indian-gov site.
+    re.compile(
+        r"^[A-Za-z][A-Za-z ]{1,30}\s*\([^A-Za-z\s)]{1,40}\)\s*$"
+    ),
+    # Bare visitor counters / page-stamp footers that survive the
+    # substring filter when they appear without keywords (rare but
+    # cheap to catch): "03-05-2026 | 408358 | …".
+    re.compile(
+        r"^\d{1,2}[-/]\d{1,2}[-/]\d{2,4}\s*\|\s*\d{2,}\s*(\|.*)?$"
+    ),
 )
 
 _EMPTY_ALT_IMAGE_RE = re.compile(r"!\[\s*\]\([^)]*\)")
@@ -231,6 +271,8 @@ def clean_markdown(md: str) -> str:
         if _RULER_RE.fullmatch(low):
             continue
         if any(marker in low for marker in _SKIP_LINE_MARKERS):
+            continue
+        if any(rx.match(stripped) for rx in _SKIP_LINE_REGEXES):
             continue
 
         out_lines.append(stripped)
