@@ -319,6 +319,10 @@ class ChangeEvent(SQLModel, table=True):
     # `summary` is the LLM-produced plain-English compliance summary
     # ("what changed and what do I need to do about it").
     summary: Optional[str] = Field(default=None, sa_column=Column(Text))
+    # `headline` is a short factual identifier (6–12 words) — used as
+    # the alert title in the inbox. Distinct from `summary` which is
+    # the actionable description. Migration 019.
+    headline: Optional[str] = Field(default=None, max_length=160)
     llm_model: Optional[str] = Field(default=None, max_length=50)
     llm_error: Optional[str] = Field(default=None, sa_column=Column(Text))
     scored_at: Optional[datetime] = Field(default=None)

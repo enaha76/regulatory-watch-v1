@@ -401,24 +401,34 @@ def derive_title(
     Pick a short, headline-style title for the alert card.
 
     Priority chain:
-      1. SourceVersion.title  — the document's actual headline (skipped
+      1. event.headline — the LLM-generated newspaper-style headline
+         (added M5; the cleanest title because it was authored to BE
+         a title rather than reused from the summary)
+      2. SourceVersion.title  — the document's actual headline (skipped
          when the stored title is just the URL, which happened on legacy
          XML crawls; see _looks_like_url_title)
-      2. First sentence of event.summary — only if no source title
-      3. A topic-based label (e.g. "Customs Trade update")
-      4. Generic fallback ("Regulatory change detected")
+      3. First sentence of event.summary — only if no source title
+      4. A topic-based label (e.g. "Customs Trade update")
+      5. Generic fallback ("Regulatory change detected")
 
     Title and summary now come from DIFFERENT fields, so they no
     longer duplicate each other.
     """
-    # 1. Real document title (preferred). Skip URL-shaped titles —
+    # 1. LLM-produced headline (preferred). This was authored to BE a
+    # title — short, factual, no imperative voice — instead of the
+    # summary-truncated approximation we used to fall back to.
+    headline = (getattr(event, "headline", None) or "").strip()
+    if headline:
+        return _truncate(headline, _MAX_TITLE_CHARS)
+
+    # 2. Real document title. Skip URL-shaped titles —
     # those come from the legacy XML connector default and are not
     # human-readable; the summary-derived title below is far better.
     src_title = fetch_source_title(session, event)
     if src_title and not _looks_like_url_title(src_title):
         return _truncate(src_title, _MAX_TITLE_CHARS)
 
-    # 2. First sentence of LLM-produced summary
+    # 3. First sentence of LLM-produced summary
     if event.summary:
         first = _first_sentence(event.summary)
         if first:

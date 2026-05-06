@@ -112,6 +112,10 @@ class SignificanceOutput(BaseModel):
     affected_entities: list[str] = Field(default_factory=list)
     deadline_changes: list[DeadlineChange] = Field(default_factory=list)
     compliance_summary: str = Field(min_length=1, max_length=2000)
+    # Short factual identifier (6–12 words). Used as the alert title
+    # in the inbox. Distinct from compliance_summary, which describes;
+    # this NAMES the change (actor + action + object).
+    headline: str = Field(default="", max_length=160)
     # ── M5 prelude: trade-flow / country filters ─────────────────────
     # LLM-produced. `origin_countries` is normalised downstream through
     # `app.services.geo.normalize_country_codes`; here we accept any
@@ -216,6 +220,28 @@ You MUST respond with a single JSON object matching this schema:
                           / 18.5% (special)".
                         - If a single sentence cannot fit all changes, use
                           two or three. Brevity does not justify omission.
+  "headline":           one short newspaper-style headline, 6–12 words,
+                        max 120 chars. This is the row title in a
+                        compliance officer's inbox — it must IDENTIFY
+                        the change at a glance, not describe it.
+                        Rules:
+                        - Lead with the actor (agency / regulator) when
+                          known: "ATF:", "CBP:", "EU Commission:".
+                        - Use sentence-style title case ("ATF: Remove
+                          Outdated Proscribed-Countries List") not ALL
+                          CAPS and not lowercase.
+                        - State the action as a verb noun phrase: "Cut",
+                          "Reduce", "Add", "Extend", "Remove", "Open
+                          Comment Period".
+                        - Quote the most important number when there is
+                          one: "PRC Anti-Dumping Rate Cut: 194% → 82%".
+                        - Never start with "You must", "You need", "You
+                          should", "It is important", "The document",
+                          "This rule", "This proposed rule".
+                        - Never paste the URL or a filename.
+                        - Never end with an ellipsis. If you cannot fit
+                          the change in 12 words, drop the least essential
+                          word, do not truncate.
   "origin_countries":  list of ISO-3166 alpha-2 codes identifying the country of
                        ORIGIN of goods / transactions / entities the rule applies
                        to. Use "EU" for European Union, "GB" for the United Kingdom.
@@ -571,6 +597,10 @@ def score_event(event_id: UUID, *, retry_errors: bool = False) -> dict:
         # the lossy round-trip (source_lang → EN → source_lang).
         # See docs/architectural_problems.md §2 for rationale.
         event.summary = parsed.compliance_summary
+        # Strip whitespace and clip to the column limit. Empty headlines
+        # become NULL so derive_title falls through to legacy behaviour.
+        hl = (parsed.headline or "").strip()
+        event.headline = hl[:160] if hl else None
         # Fix 1 — Hardcoded Trade Flow: use assign_trade_countries()
         # which respects trade_flow_direction instead of blindly mapping
         # the URL jurisdiction to destination_countries.
