@@ -66,6 +66,16 @@ class SourceItem(BaseModel):
     maxPages: int = 50
     userSubscribed: bool = True
     countryCode: Optional[str] = None
+    # Crawl health derived from the rolling 24h blocker counter:
+    #   "ok"        — zero blocks (the normal case)
+    #   "degraded"  — 1–2 blocks (could be transient / single bad page)
+    #   "blocked"   — 3+ blocks (pattern: CAPTCHA, redirect to interstitial,
+    #                 or empty crawls). UI should show a red dot.
+    # `lastBlockReason` is the most-recent reason string (e.g.
+    # "title:'request access'" or "no_pages_indexed").
+    health: str = "ok"
+    lastBlockReason: Optional[str] = None
+    blockCount24h: int = 0
 
 
 _FREQUENCY_PATTERN = "^(Hourly|Daily|Weekly|Monthly)$"
@@ -186,6 +196,7 @@ def _last_fetch_run(session: Session, domain_id: UUID) -> Optional[FetchRun]:
 
 def _build_source(session: Session, d: Domain) -> SourceItem:
     from app.config import get_settings
+    from app.ingestion.blocker_detect import block_count, last_reason
 
     seed = (d.seed_urls or [""])[0] if d.seed_urls else ""
     if not seed:
@@ -202,6 +213,18 @@ def _build_source(session: Session, d: Domain) -> SourceItem:
     # shows what will actually happen on the next crawl.
     s = get_settings()
     effective_max_pages = d.max_pages or s.CRAWL_DEFAULT_MAX_PAGES
+
+    # Crawl health from Redis blocker counters (rolling 24h window).
+    # Without this surface, federalregister.gov sat in the dashboard as
+    # "active" for days while every crawl was being CAPTCHA-blocked.
+    n_blocks = block_count(seed) if host else 0
+    block_reason = last_reason(seed) if host and n_blocks > 0 else None
+    if n_blocks >= 3:
+        health = "blocked"
+    elif n_blocks >= 1:
+        health = "degraded"
+    else:
+        health = "ok"
 
     return SourceItem(
         id=str(d.id),
@@ -220,6 +243,9 @@ def _build_source(session: Session, d: Domain) -> SourceItem:
         maxPages=effective_max_pages,
         userSubscribed=True,  # stub — no user↔source link yet
         countryCode=_infer_country(host or ""),
+        health=health,
+        lastBlockReason=block_reason,
+        blockCount24h=n_blocks,
     )
 
 

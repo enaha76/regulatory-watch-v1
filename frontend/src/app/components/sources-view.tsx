@@ -1298,7 +1298,31 @@ export function SourcesView() {
                   </TableCell>
                   <TableCell>
                     <div>
-                      <p style={{ fontWeight: "var(--font-weight-medium)" }}>
+                      <p
+                        className="flex items-center gap-2"
+                        style={{ fontWeight: "var(--font-weight-medium)" }}
+                      >
+                        {source.health && source.health !== "ok" && (
+                          <span
+                            // Coloured dot inline with the source name.
+                            // The native title attribute gives a tooltip
+                            // with the precise reason ("title:'request
+                            // access'", "no_pages_indexed", etc.) and
+                            // the 24h block count without bringing in a
+                            // shadcn Tooltip primitive for a one-row use.
+                            className={`inline-block size-2 rounded-full shrink-0 ${
+                              source.health === "blocked"
+                                ? "bg-destructive"
+                                : "bg-amber-500"
+                            }`}
+                            title={
+                              source.health === "blocked"
+                                ? `Blocked — ${source.blockCount24h ?? 0} block(s) in last 24h${source.lastBlockReason ? ` · ${source.lastBlockReason}` : ""}`
+                                : `Degraded — ${source.blockCount24h ?? 0} block(s) in last 24h${source.lastBlockReason ? ` · ${source.lastBlockReason}` : ""}`
+                            }
+                            aria-label={`Source health: ${source.health}`}
+                          />
+                        )}
                         {source.name}
                       </p>
                       <p

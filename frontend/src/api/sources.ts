@@ -5,6 +5,8 @@ import { authFetch } from "@/app/auth";
 export type SourceType = "web" | "rss" | "email" | "api" | "database";
 export type SourceStatus = "active" | "inactive";
 
+export type SourceHealth = "ok" | "degraded" | "blocked";
+
 export interface DataSource {
   id: string;
   name: string;
@@ -20,6 +22,15 @@ export interface DataSource {
   maxPages: number;
   userSubscribed: boolean;
   countryCode?: string | null;
+  /**
+   * Crawl health from the rolling 24h blocker counter. "ok" = no
+   * blocks; "degraded" = 1–2 blocks (transient); "blocked" = 3+
+   * (CAPTCHA / interstitial / consistently empty crawls). Render as
+   * a coloured dot next to the source name.
+   */
+  health?: SourceHealth;
+  lastBlockReason?: string | null;
+  blockCount24h?: number;
 }
 
 export type SourceFrequency = "Hourly" | "Daily" | "Weekly" | "Monthly";
