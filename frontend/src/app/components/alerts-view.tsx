@@ -1100,20 +1100,17 @@ export function AlertsView() {
         )}
       </div>
 
+      {/* Inbox grid — Linear / Superhuman style. Two cells per row:
+          a flexible Alert cell on the left, a compact "meta + actions"
+          cell on the right that expands only as wide as its contents.
+          No table header — an inbox doesn't need one, and dropping it
+          recovers ~30px of vertical space per page. */}
       <div className="rounded-md border bg-card">
         <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Alert</TableHead>
-              <TableHead style={{ width: "120px" }}>Date</TableHead>
-              <TableHead style={{ width: "100px" }}>Relevance</TableHead>
-              <TableHead style={{ width: "260px" }}>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
           <TableBody>
             {filteredAlerts.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="h-24 text-center">
+                <TableCell colSpan={2} className="h-24 text-center">
                   <div className="flex flex-col items-center gap-2">
                     <Search className="size-8 text-muted-foreground" />
                     <p className="text-muted-foreground">
@@ -1229,57 +1226,64 @@ export function AlertsView() {
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="text-muted-foreground tabular-nums">
-                      {alert.publicationDate ? (
-                        (() => {
-                          const d = new Date(alert.publicationDate);
-                          if (Number.isNaN(d.getTime())) return "—";
-                          return (
-                            <>
-                              <div>
-                                {d.toLocaleDateString("en-US", {
-                                  month: "short",
-                                  day: "numeric",
-                                  year: "numeric",
-                                })}
-                              </div>
-                              <div
-                                style={{ fontSize: "var(--text-xs)" }}
-                                className="opacity-70"
-                              >
-                                {d.toLocaleTimeString("en-US", {
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                  hour12: false,
-                                })}
-                              </div>
-                            </>
-                          );
-                        })()
-                      ) : (
-                        "—"
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={getRelevanceColor(alert.relevanceScore)}>
-                        {alert.relevanceScore}%
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {/* Two button groups separated by a thin divider:
-                          row-state actions on the left (pin/seen/archive),
-                          review actions on the right (thumbs / undo).
-                          Hidden on idle, revealed on row-hover or
-                          keyboard focus or when there's already a
-                          state to show (pinned / reviewed). Linear /
-                          Superhuman pattern — keeps the table calm. */}
-                      <div
-                        className={`flex items-center gap-1 transition-opacity duration-150 ${
-                          isKeyboardFocused || alert.pinned || isReviewed
-                            ? "opacity-100"
-                            : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"
-                        }`}
-                      >
+                    {/* Single right cell — date + relevance + actions
+                        in one flex row. Cell shrinks to content (w-px
+                        + whitespace-nowrap), leaving the Alert cell to
+                        absorb all remaining space. Actions hide-on-idle
+                        so an unhovered row reads as just title + date
+                        + score, with no dead column on the right. */}
+                    <TableCell className="w-px whitespace-nowrap pr-3">
+                      <div className="flex items-center justify-end gap-3">
+                        {/* Compact date — small, right-aligned, two
+                            lines (date / time) so the right edge is
+                            visually quiet. */}
+                        <div className="text-muted-foreground tabular-nums text-right leading-tight">
+                          {alert.publicationDate ? (
+                            (() => {
+                              const d = new Date(alert.publicationDate);
+                              if (Number.isNaN(d.getTime())) return "—";
+                              return (
+                                <>
+                                  <div style={{ fontSize: "var(--text-xs)" }}>
+                                    {d.toLocaleDateString("en-US", {
+                                      month: "short",
+                                      day: "numeric",
+                                    })}
+                                  </div>
+                                  <div
+                                    className="opacity-60"
+                                    style={{ fontSize: "var(--text-xs)" }}
+                                  >
+                                    {d.toLocaleTimeString("en-US", {
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                      hour12: false,
+                                    })}
+                                  </div>
+                                </>
+                              );
+                            })()
+                          ) : (
+                            "—"
+                          )}
+                        </div>
+
+                        {/* Relevance pill — three-tier colour. */}
+                        <Badge className={getRelevanceColor(alert.relevanceScore)}>
+                          {alert.relevanceScore}%
+                        </Badge>
+
+                        {/* Actions — hidden on idle, revealed on
+                            row-hover or keyboard focus. When already
+                            in a state (pinned / reviewed) they stay
+                            visible so the user can see the state. */}
+                        <div
+                          className={`flex items-center gap-1 transition-opacity duration-150 ${
+                            isKeyboardFocused || alert.pinned || isReviewed
+                              ? "opacity-100"
+                              : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"
+                          }`}
+                        >
                         <Button
                           variant="ghost"
                           size="icon"
@@ -1394,6 +1398,7 @@ export function AlertsView() {
                             </Button>
                           </>
                         )}
+                        </div>
                       </div>
                     </TableCell>
                   </TableRow>
