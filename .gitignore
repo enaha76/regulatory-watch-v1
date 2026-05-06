@@ -12,3 +12,4 @@ celerybeat.pid
 /slides.*
 .playwright-mcp/
 eval-*.md
+audit-*.png
