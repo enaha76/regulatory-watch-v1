@@ -5,7 +5,7 @@
   "subtitle": "CFR Title 19, Chapter IV",
   "effective_date": "2026-01-01",
   "reference_number": "ATCA/TS/2026/001",
-  "summary": "The following table outlines the current tariff classifications and duty rates administered by the Authority for select chapters. These rates are effective as of January 1, 2026, unless otherwise noted.",
+  "summary": "The following table outlines the current tariff classifications and duty rates administered by the Authority for select chapters. These rates are effective as of January 1, 2027, unless otherwise noted. test",
   "sections": [
     {
       "type": "note",
@@ -36,8 +36,8 @@
         [
           "8541.40.60",
           "Diodes for semiconductor devices",
-          "Free",
-          "Free"
+          "13.5%",
+          "18.5%"
         ],
         [
           "8542.31.00",
@@ -57,5 +57,5 @@
     "filename": "tariff-schedule-2026.pdf",
     "document_title": "GENERAL TARIFF SCHEDULE — 2026 EDITION"
   },
-  "updated_at": "2026-05-05T15:42:42.801Z"
+  "updated_at": "2026-05-06T09:05:50.711Z"
 }

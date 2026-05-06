@@ -25,6 +25,7 @@ from app.services.alert_adapter import (
     build_frontend_alert,
     status_fe_to_be,
 )
+from app.services.auth import CurrentUser, get_current_user
 
 
 router = APIRouter(prefix="/api/v2/alerts", tags=["Frontend Alerts (v2)"])
@@ -72,7 +73,7 @@ def _resolve_alert(session: Session, alert_id: UUID) -> tuple[Alert, ChangeEvent
 def list_alerts_v2(
     email: Optional[str] = Query(
         default=None,
-        description="Filter to one user's subscriptions. Omit to see every alert.",
+        description="(Admin) Override the auth-derived email to inspect another user's alerts.",
     ),
     status: Optional[str] = Query(
         default=None,
@@ -81,29 +82,51 @@ def list_alerts_v2(
     ),
     limit: int = Query(default=50, ge=1, le=200),
     session: Session = Depends(get_session),
+    user: CurrentUser = Depends(get_current_user),
 ):
     """
     List alerts shaped for the regwatch admin frontend.
 
-    Most-recent first. If `email` is supplied, only that user's alerts
-    are returned. Otherwise — useful for admin dashboards — every alert
-    is included.
+    Most-recent first. Returns the calling user's alerts only, unless
+    they're an ``admin`` and pass ``?email=other@user.com`` to inspect
+    someone else's view, OR ``?email=*`` to see every alert in the
+    system (legacy admin behaviour).
 
     Dedup: a single regulatory ChangeEvent typically matches multiple
     user subscriptions, generating one alert row per subscription. The
-    admin view collapses these into one row per ChangeEvent so the
-    inbox shows real changes, not subscription-fanout duplicates. The
+    view collapses these into one row per ChangeEvent so the inbox
+    shows real changes, not subscription-fanout duplicates. The
     most-recent alert per event wins; pin/feedback state of the other
-    matching alerts is preserved on those rows in the DB and surfaces
-    if the user filters down to that subscription specifically.
+    matching alerts is preserved on those rows in the DB.
     """
+    # Resolve which subscriptions the caller is allowed to read.
+    # - `?email=*`        — admin only, every alert in the system
+    # - `?email=foo@bar`  — admin only, that specific user's alerts
+    # - omitted           — the caller's own alerts (default)
     stmt = select(Alert)
+    target_email: Optional[str]
+    if email == "*":
+        if not user.has_role("admin"):
+            raise HTTPException(
+                status_code=403,
+                detail="Admin role required to list alerts across all users",
+            )
+        target_email = None  # no filter — every alert
+    elif email is not None and email != user.email:
+        if not user.has_role("admin"):
+            raise HTTPException(
+                status_code=403,
+                detail="Admin role required to inspect another user's alerts",
+            )
+        target_email = email
+    else:
+        target_email = user.email
 
-    if email:
+    if target_email is not None:
         sub_ids = list(
             session.exec(
                 select(UserSubscription.id).where(
-                    UserSubscription.user_email == email
+                    UserSubscription.user_email == target_email
                 )
             ).all()
         )
@@ -140,6 +163,7 @@ def list_alerts_v2(
 def get_alert_v2(
     alert_id: UUID,
     session: Session = Depends(get_session),
+    user: CurrentUser = Depends(get_current_user),  # noqa: ARG001 — auth gate only
 ):
     """Single alert detail — adds a `summary` bullet array."""
     alert, event = _resolve_alert(session, alert_id)
@@ -151,6 +175,7 @@ def update_alert_v2(
     alert_id: UUID,
     body: AlertPatch,
     session: Session = Depends(get_session),
+    user: CurrentUser = Depends(get_current_user),  # noqa: ARG001 — auth gate only
 ):
     """
     Update an alert. Translates frontend vocabulary → DB.

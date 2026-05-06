@@ -201,9 +201,21 @@ You MUST respond with a single JSON object matching this schema:
                          ("0304.29.00", not "030429 00").
                        Empty list if none.
   "deadline_changes":  list of objects {old, new, deadline_text}. Empty list if none.
-  "compliance_summary": 1–3 sentences, plain English, actionable.
+  "compliance_summary": 1–4 sentences, plain English, actionable.
                         Address the reader as "you" and say what they need to do
                         (or not do) as a result of this change.
+                        - You MUST cover EVERY material change in the diff,
+                          not just the first one. If the diff contains both
+                          a date change AND a duty-rate change (or any other
+                          combination), name BOTH explicitly with their
+                          old → new values.
+                        - Numeric changes (duty rates, percentages, amounts,
+                          thresholds, HS codes, deadlines) are always
+                          material — quote them verbatim, e.g. "the duty on
+                          HS 8541.40.60 rises from Free to 13.5% (general)
+                          / 18.5% (special)".
+                        - If a single sentence cannot fit all changes, use
+                          two or three. Brevity does not justify omission.
   "origin_countries":  list of ISO-3166 alpha-2 codes identifying the country of
                        ORIGIN of goods / transactions / entities the rule applies
                        to. Use "EU" for European Union, "GB" for the United Kingdom.

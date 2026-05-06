@@ -52,3 +52,9 @@ crawl4ai>=0.8.5
 # pdfplumber when Docling is not installed, so this is safe to omit.
 #
 # To enable:  pip install -r requirements-docling.txt
+
+# ── Auth (Keycloak / OIDC JWT validation) ─────────────────
+# python-jose is used by app/services/auth.py to verify JWTs against the
+# Keycloak realm's public JWKS. The [cryptography] extra pulls in the
+# RSA backend needed for RS256 verification (Keycloak's default).
+python-jose[cryptography]==3.3.0

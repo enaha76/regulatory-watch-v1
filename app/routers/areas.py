@@ -27,6 +27,7 @@ from sqlmodel import Session, select
 from app.database import get_session
 from app.logging_setup import get_logger
 from app.models import UserSubscription
+from app.services.auth import CurrentUser, get_current_user
 
 
 log = get_logger(__name__)
@@ -97,13 +98,21 @@ def _empty_profile(email: str) -> AreasProfile:
 
 @router.get("", response_model=AreasProfile)
 def get_areas(
-    email: str = Query(..., min_length=3, description="User email"),
+    email: Optional[str] = Query(
+        default=None,
+        min_length=3,
+        description="(Admin) Override the auth-derived email. Defaults to the caller.",
+    ),
     session: Session = Depends(get_session),
+    user: CurrentUser = Depends(get_current_user),
 ):
     """Return the user's saved profile, or an empty one if they have none."""
-    sub = _primary_subscription(session, email)
+    target = email or user.email
+    if target != user.email and not user.has_role("admin"):
+        raise HTTPException(status_code=403, detail="Admin role required")
+    sub = _primary_subscription(session, target)
     if sub is None:
-        return _empty_profile(email)
+        return _empty_profile(target)
     return _to_profile(sub)
 
 
@@ -111,6 +120,7 @@ def get_areas(
 def upsert_areas(
     body: AreasProfile,
     session: Session = Depends(get_session),
+    user: CurrentUser = Depends(get_current_user),
 ):
     """
     Save the user's areas-of-interest profile.
@@ -119,6 +129,13 @@ def upsert_areas(
     - Updates the existing primary one otherwise.
     - Re-computes the keyword embedding so the matching engine can use it.
     """
+    # Enforce: caller can only save their OWN profile, unless admin.
+    if body.email != user.email and not user.has_role("admin"):
+        raise HTTPException(
+            status_code=403,
+            detail="You can only save your own Areas of Interest",
+        )
+
     # Normalize: strip whitespace, dedupe, drop empties
     def _clean(values: list[str]) -> list[str]:
         seen: set[str] = set()

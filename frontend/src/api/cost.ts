@@ -1,3 +1,4 @@
+import { authFetch } from "@/app/auth";
 // Typed wrappers around /api/admin/cost-report.
 //
 // The backend serves an aggregated rollup of the append-only LLM usage
@@ -71,6 +72,6 @@ export async function fetchCostReport(opts: {
   if (opts.since) qs.set("since", opts.since);
   if (opts.scope) qs.set("scope", opts.scope);
   const url = `/api/admin/cost-report${qs.toString() ? `?${qs}` : ""}`;
-  const res = await fetch(url);
+  const res = await authFetch(url);
   return jsonOrThrow<CostReport>(res);
 }

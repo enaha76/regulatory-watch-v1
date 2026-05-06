@@ -925,20 +925,28 @@ export function AlertsView() {
             ) : (
               filteredAlerts.map((alert) => {
                 const isReviewed = !!alert.userFeedback;
+                const isUnread = alert.status === "new" && !isReviewed;
                 // Three visual tiers:
                 //   reviewed (feedback set): heavy fade — done with it
                 //   read (status=read, no feedback): light fade — seen but not dispositioned
-                //   new: full opacity
+                //   new: full opacity + accent stripe + bold title
                 const rowOpacity = isReviewed
                   ? "opacity-40"
                   : alert.status === "read"
                     ? "opacity-70"
                     : "";
+                // Unread rows get a left accent stripe + tinted background
+                // so they're unmistakable even when the table has only one
+                // row (otherwise the subtle opacity/badge cues are easy
+                // to miss).
+                const unreadCue = isUnread
+                  ? "relative bg-primary/5 before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-1 before:bg-primary"
+                  : "";
 
                 return (
                   <TableRow
                     key={alert.id}
-                    className={rowOpacity}
+                    className={`${rowOpacity} ${unreadCue}`.trim()}
                   >
                     {/* Single rich Alert cell — country flag inline,
                         title clickable, authority + chips below */}
@@ -949,7 +957,7 @@ export function AlertsView() {
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start gap-2 flex-wrap">
-                            {alert.status === "new" && !isReviewed && (
+                            {isUnread && (
                               <Badge
                                 variant="default"
                                 className="shrink-0"
@@ -974,7 +982,9 @@ export function AlertsView() {
                               style={{
                                 fontWeight: isReviewed
                                   ? "var(--font-weight-normal)"
-                                  : "var(--font-weight-medium)",
+                                  : isUnread
+                                    ? "var(--font-weight-bold)"
+                                    : "var(--font-weight-medium)",
                               }}
                             >
                               {alert.title}

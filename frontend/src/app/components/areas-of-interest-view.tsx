@@ -1,12 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { getAreas, saveAreas } from "@/api/areas";
-
-// No auth in the app yet — every user shares one profile. Override with
-// VITE_USER_EMAIL if you want to test multi-user locally.
-const CURRENT_USER_EMAIL =
-  (typeof import.meta !== "undefined" &&
-    (import.meta as any).env?.VITE_USER_EMAIL) ||
-  "current.user@regwatch.app";
+import { useAuth } from "@/app/auth";
 
 // Walk an HS tree marking nodes as selected when their code is in `codes`.
 function applySelections(nodes: HSNode[], codes: Set<string>): HSNode[] {
@@ -200,6 +194,8 @@ const suggestedKeywords = [
 ];
 
 export function AreasOfInterestView() {
+  const { user } = useAuth();
+  const userEmail = user?.email ?? "";
   const [activeTab, setActiveTab] = useState("products");
   const [hsTree, setHsTree] = useState<HSNode[]>(hsTreeData);
   const [hsSearchQuery, setHsSearchQuery] = useState("");
@@ -216,7 +212,7 @@ export function AreasOfInterestView() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    getAreas(CURRENT_USER_EMAIL)
+    getAreas(userEmail)
       .then((profile) => {
         if (cancelled) return;
         setSelectedCountries(profile.countries || []);
@@ -405,7 +401,7 @@ export function AreasOfInterestView() {
     setSaving(true);
     try {
       const profile = await saveAreas({
-        email: CURRENT_USER_EMAIL,
+        email: userEmail,
         hsCodes: collectSelectedCodes(hsTree),
         countries: selectedCountries,
         keywords,
@@ -427,7 +423,7 @@ export function AreasOfInterestView() {
     setSaveError(null);
     setLoading(true);
     try {
-      const profile = await getAreas(CURRENT_USER_EMAIL);
+      const profile = await getAreas(userEmail);
       setSelectedCountries(profile.countries || []);
       setKeywords(profile.keywords || []);
       const codeSet = new Set(profile.hsCodes || []);

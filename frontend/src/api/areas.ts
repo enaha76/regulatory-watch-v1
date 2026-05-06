@@ -1,3 +1,4 @@
+import { authFetch } from "@/app/auth";
 // Typed wrappers around /api/v2/areas — the user's "areas of interest"
 // profile (HS codes, countries, keywords).
 
@@ -25,12 +26,12 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
 
 export async function getAreas(email: string): Promise<AreasProfile> {
   const url = `/api/v2/areas?email=${encodeURIComponent(email)}`;
-  const res = await fetch(url);
+  const res = await authFetch(url);
   return jsonOrThrow<AreasProfile>(res);
 }
 
 export async function saveAreas(profile: AreasProfile): Promise<AreasProfile> {
-  const res = await fetch("/api/v2/areas", {
+  const res = await authFetch("/api/v2/areas", {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(profile),

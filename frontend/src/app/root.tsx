@@ -3,6 +3,7 @@ import { useNavigate, useLocation, Outlet } from "react-router";
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarHeader,
@@ -20,6 +21,7 @@ import {
   Globe,
   Search,
   Coins,
+  LogOut,
 } from "lucide-react";
 import { Badge } from "@/app/components/ui/badge";
 import {
@@ -27,6 +29,7 @@ import {
   useNotifications,
 } from "@/app/notifications";
 import { SystemHealthIndicator } from "@/app/components/system-health";
+import { useAuth } from "@/app/auth";
 import logoIcon from "@/assets/logo-icon.jpeg";
 
 // The provider has to live inside a router context (because its toast
@@ -44,6 +47,7 @@ function RootInner() {
   const navigate = useNavigate();
   const location = useLocation();
   const { unreadCount } = useNotifications();
+  const { user, logout } = useAuth();
   const [activeView, setActiveView] = useState(() => {
     if (location.pathname === "/" || location.pathname.startsWith("/alerts")) return "inbox";
     if (location.pathname === "/archive") return "archive";
@@ -181,6 +185,34 @@ function RootInner() {
             </SidebarGroupContent>
           </SidebarGroup>
         </SidebarContent>
+        <SidebarFooter>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <div className="px-3 pt-1 pb-2 min-w-0">
+                <div
+                  className="text-sidebar-foreground font-medium truncate"
+                  style={{ fontSize: "var(--text-sm)" }}
+                >
+                  {user?.name || user?.email || "Signed in"}
+                </div>
+                {user?.email && user.name ? (
+                  <div
+                    className="text-sidebar-foreground/60 truncate"
+                    style={{ fontSize: "var(--text-xs)" }}
+                  >
+                    {user.email}
+                  </div>
+                ) : null}
+              </div>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton onClick={logout}>
+                <LogOut />
+                <span>Sign out</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
       </Sidebar>
       <SidebarInset>
         <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-card px-4">

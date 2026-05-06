@@ -1,3 +1,4 @@
+import { authFetch } from "@/app/auth";
 // Typed wrappers around the regwatch FastAPI v2 alerts endpoints.
 // Mirrors the Alert interface used by the views so swap-in is a one-liner
 // (replace `useState(mockAlerts)` with `listAlerts()` in useEffect).
@@ -115,12 +116,12 @@ export async function listAlerts(
   if (params.status) qs.set("status", params.status);
   if (params.limit !== undefined) qs.set("limit", String(params.limit));
   const url = `/api/v2/alerts${qs.toString() ? `?${qs}` : ""}`;
-  const res = await fetch(url);
+  const res = await authFetch(url);
   return jsonOrThrow<Alert[]>(res);
 }
 
 export async function getAlert(id: string): Promise<AlertDetail> {
-  const res = await fetch(`/api/v2/alerts/${encodeURIComponent(id)}`);
+  const res = await authFetch(`/api/v2/alerts/${encodeURIComponent(id)}`);
   return jsonOrThrow<AlertDetail>(res);
 }
 
@@ -134,7 +135,7 @@ export async function updateAlert(
   id: string,
   patch: AlertPatch,
 ): Promise<AlertDetail> {
-  const res = await fetch(`/api/v2/alerts/${encodeURIComponent(id)}`, {
+  const res = await authFetch(`/api/v2/alerts/${encodeURIComponent(id)}`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(patch),

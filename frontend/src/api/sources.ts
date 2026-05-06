@@ -1,3 +1,4 @@
+import { authFetch } from "@/app/auth";
 // Typed wrappers around /api/v2/sources — frontend-shaped view over the
 // regwatch backend's `domains` table.
 
@@ -110,12 +111,12 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
 }
 
 export async function listSources(): Promise<DataSource[]> {
-  const res = await fetch("/api/v2/sources");
+  const res = await authFetch("/api/v2/sources");
   return jsonOrThrow<DataSource[]>(res);
 }
 
 export async function createSource(body: SourceCreate): Promise<DataSource> {
-  const res = await fetch("/api/v2/sources", {
+  const res = await authFetch("/api/v2/sources", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -127,7 +128,7 @@ export async function updateSource(
   id: string,
   patch: SourcePatch,
 ): Promise<DataSource> {
-  const res = await fetch(`/api/v2/sources/${encodeURIComponent(id)}`, {
+  const res = await authFetch(`/api/v2/sources/${encodeURIComponent(id)}`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(patch),
@@ -138,7 +139,7 @@ export async function updateSource(
 export async function triggerSourceCrawl(
   id: string,
 ): Promise<CrawlNowResponse> {
-  const res = await fetch(
+  const res = await authFetch(
     `/api/v2/sources/${encodeURIComponent(id)}/crawl-now`,
     { method: "POST" },
   );
@@ -149,7 +150,7 @@ export async function triggerSourceCrawl(
 export async function getCrawlTaskStatus(
   taskId: string,
 ): Promise<CrawlTaskStatus> {
-  const res = await fetch(
+  const res = await authFetch(
     `/api/admin/task/${encodeURIComponent(taskId)}`,
   );
   return jsonOrThrow<CrawlTaskStatus>(res);

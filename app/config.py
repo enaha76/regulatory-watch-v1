@@ -98,6 +98,33 @@ class Settings(BaseSettings):
     # Path is relative to the project root unless absolute.
     LLM_USAGE_LEDGER_PATH: str = "artifacts/llm_usage/llm_usage.jsonl"
 
+    # ── Authentication (Keycloak / OIDC) ─────────────────
+    # Issuer URL of the OIDC provider. The app fetches its public keys
+    # from {issuer}/protocol/openid-connect/certs to verify JWTs.
+    # Default points at the docker-compose Keycloak service.
+    # The issuer string we expect in every JWT's `iss` claim. Must
+    # match exactly what Keycloak emits — i.e., the URL the frontend
+    # used to log in. Frontend hits Keycloak at http://localhost:8085
+    # in dev, so that's the issuer. Override for staging/prod.
+    KEYCLOAK_ISSUER: str = "http://localhost:8085/realms/regwatch"
+    # Where the backend FETCHES the public keys from. May differ from
+    # the issuer when the API runs inside Docker but the frontend hits
+    # Keycloak via the host port. In dev we use host.docker.internal so
+    # the api container can reach the host-bound Keycloak port.
+    # Falls back to {KEYCLOAK_ISSUER}/protocol/openid-connect/certs
+    # when empty.
+    KEYCLOAK_JWKS_URL: str = (
+        "http://host.docker.internal:8085/realms/regwatch/protocol/openid-connect/certs"
+    )
+    # Audience claim the API accepts. Keycloak emits "account" or the
+    # client id depending on config; we accept both for flexibility.
+    KEYCLOAK_AUDIENCE: str = "account"
+    # When true (and APP_ENV == "dev"), missing Authorization headers
+    # fall back to a synthetic dev user instead of returning 401. Lets
+    # devs hit the API without booting the auth flow each time.
+    AUTH_ALLOW_DEV_FALLBACK: bool = True
+    AUTH_DEV_FALLBACK_EMAIL: str = "current.user@regwatch.app"
+
     # ── M3 / M4 gating ───────────────────────────────────
     # Min significance_score to trigger M4 obligation extraction.
     # 0.6 = "substantive" or higher per the L3 rubric.

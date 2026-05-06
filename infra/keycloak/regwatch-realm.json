@@ -1,0 +1,81 @@
+{
+  "realm": "regwatch",
+  "displayName": "RegWatch",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "rememberMe": true,
+  "verifyEmail": false,
+  "accessTokenLifespan": 1800,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "roles": {
+    "realm": [
+      { "name": "user", "description": "Standard user — read alerts, manage own AOI" },
+      { "name": "admin", "description": "Admin — sees every alert, manages sources" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "regwatch-frontend",
+      "name": "RegWatch Frontend",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:5173/*",
+        "http://localhost:5174/*",
+        "http://localhost:5175/*",
+        "http://localhost:3000/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:5175",
+        "http://localhost:3000",
+        "+"
+      ],
+      "rootUrl": "http://localhost:5173",
+      "baseUrl": "/",
+      "attributes": {
+        "post.logout.redirect.uris": "+",
+        "pkce.code.challenge.method": "S256"
+      },
+      "fullScopeAllowed": true,
+      "defaultClientScopes": ["web-origins", "profile", "roles", "email"],
+      "optionalClientScopes": []
+    }
+  ],
+  "users": [
+    {
+      "username": "ahmed",
+      "email": "current.user@regwatch.app",
+      "firstName": "Ahmed",
+      "lastName": "ENAHA",
+      "enabled": true,
+      "emailVerified": true,
+      "realmRoles": ["user", "admin"],
+      "credentials": [
+        { "type": "password", "value": "test123", "temporary": false }
+      ]
+    },
+    {
+      "username": "sarah",
+      "email": "sarah@acme.com",
+      "firstName": "Sarah",
+      "lastName": "Chen",
+      "enabled": true,
+      "emailVerified": true,
+      "realmRoles": ["user"],
+      "credentials": [
+        { "type": "password", "value": "test123", "temporary": false }
+      ]
+    }
+  ]
+}
