@@ -11,3 +11,4 @@ celerybeat.pid
 # Root artifacts
 /slides.*
 .playwright-mcp/
+eval-*.md
