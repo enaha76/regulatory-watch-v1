@@ -772,8 +772,9 @@ export function SourcesView() {
           // moment to run scoring + matching, then diff against the IDs
           // captured at click time to surface the *actual* new alerts
           // — with their real titles — in the toast.
-          const pageChanges =
-            (status.result.created ?? 0) + (status.result.modified ?? 0);
+          const created = status.result.created ?? 0;
+          const modified = status.result.modified ?? 0;
+          const pageChanges = created + modified;
           const fetched = status.result.fetched;
           const sourceName = cur.sourceName;
           const idsBefore = cur.unreadIdsBefore;
@@ -810,6 +811,19 @@ export function SourcesView() {
                   href: "/alerts",
                 },
               );
+            } else if (modified === 0 && created > 0) {
+              // Baseline ingest: first time we've seen any of these
+              // documents on this source. By design, `created` events
+              // don't generate alerts — they become the watched baseline,
+              // and alerts fire only when one of them later changes.
+              // Without this branch the user would fall through to the
+              // "cosmetic edits" message below, which is misleading
+              // (these aren't cosmetic, they're brand-new docs).
+              notify(`Baseline captured for ${sourceName}`, {
+                description: `${created} document${created === 1 ? "" : "s"} now being watched. You'll be notified when any of them change.`,
+                variant: "info",
+                durationMs: 8000,
+              });
             } else if (pageChanges > 0) {
               // Pages changed but nothing made it past the relevance
               // filter — typical for cosmetic banner shifts. Tell the

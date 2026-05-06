@@ -774,6 +774,24 @@ class WebConnector(IngestorBase):
                 if not url or _is_skippable_url(url):
                     continue
                 if not is_same_domain(url, self.allowed_domain):
+                    # The seed (or a followed link) was redirected to a
+                    # different host. The most common cause is an
+                    # anti-bot interstitial — federalregister.gov sends
+                    # automated traffic to unblock.federalregister.gov,
+                    # USTR / DGFT periodically punt to CAPTCHA gateways,
+                    # and ASP.NET sites sometimes redirect off-domain to
+                    # an SSO provider. Record it as a block so the
+                    # source surfaces as unhealthy in the UI rather
+                    # than just looking idle.
+                    redirected_host = urlparse(url).hostname or "?"
+                    logger.warning(
+                        "off-domain redirect skipped: allowed=%s redirected_to=%s",
+                        self.allowed_domain, redirected_host,
+                    )
+                    _record_block(
+                        f"https://{self.allowed_domain}/",
+                        f"redirect_off_domain:{redirected_host}",
+                    )
                     continue
                 if self.allowed_path_prefix:
                     if not urlparse(url).path.startswith(self.allowed_path_prefix):
@@ -781,10 +799,13 @@ class WebConnector(IngestorBase):
 
                 markdown = self._crawl4ai_markdown(result)
                 raw_text = _clean_markdown(markdown) if markdown else None
-                if not raw_text or len(raw_text) < self.MIN_TEXT_LEN:
-                    continue
 
-                # Extract title
+                # Extract title BEFORE the length gate so the blocker
+                # detector below can use it. Bot-challenge interstitials
+                # ("Request Access", "Just a moment", CAPTCHA pages) are
+                # often short — under MIN_TEXT_LEN — and would otherwise
+                # be dropped silently here, leaving the user with an
+                # active-but-empty source.
                 title = url
                 try:
                     from bs4 import BeautifulSoup  # type: ignore
@@ -797,14 +818,20 @@ class WebConnector(IngestorBase):
                 except Exception:
                     pass
 
-                # Blocker detection
-                blocker_reason = _is_blocker_page(raw_text, title)
+                # Blocker detection FIRST — runs even on short pages so
+                # interstitials are recorded as blocks (Redis counter +
+                # warning log) instead of vanishing into the
+                # "MIN_TEXT_LEN" silent-skip below.
+                blocker_reason = _is_blocker_page(raw_text or "", title)
                 if blocker_reason:
                     logger.warning(
                         "blocker page skipped: reason=%s title=%r url=%s",
                         blocker_reason, title[:80], url,
                     )
                     _record_block(url, blocker_reason)
+                    continue
+
+                if not raw_text or len(raw_text) < self.MIN_TEXT_LEN:
                     continue
 
                 # Harvest PDF/XML links from the page
@@ -887,9 +914,11 @@ class WebConnector(IngestorBase):
                         continue
 
                     raw_text = await self._extract_text(response, url)
-                    if not raw_text:
-                        continue
 
+                    # Title first — blocker detector reads it. Even when
+                    # raw_text is empty (short interstitials), the <title>
+                    # alone often gives "Request Access" / "Just a moment"
+                    # / "Access Denied" which the detector matches.
                     title = url
                     try:
                         from bs4 import BeautifulSoup  # type: ignore
@@ -902,39 +931,48 @@ class WebConnector(IngestorBase):
                     except Exception:
                         pass
 
-                    blocker_reason = _is_blocker_page(raw_text, title)
+                    # Blocker detection BEFORE the empty-body skip so
+                    # short challenge pages get recorded as blocks
+                    # (Redis counter + warning) instead of vanishing
+                    # silently — a real source can then be flagged
+                    # unhealthy in the UI.
+                    blocker_reason = _is_blocker_page(raw_text or "", title)
                     if blocker_reason:
                         logger.warning(
                             "blocker page skipped: reason=%s title=%r url=%s",
                             blocker_reason, title[:80], url,
                         )
                         _record_block(url, blocker_reason)
-                    else:
-                        normalized = _normalize_for_hash(raw_text)
-                        content_hash = _sha256(normalized)
-                        if content_hash not in seen_hashes:
-                            seen_hashes.add(content_hash)
-                            now = _utcnow()
-                            html_documents.append(
-                                RawDocument(
-                                    id=uuid4(),
-                                    source_url=url,
-                                    source_type="web",
-                                    raw_text=raw_text,
-                                    title=title,
-                                    language=_detect_language(normalized),
-                                    content_hash=content_hash,
-                                    fetched_at=now,
-                                    last_seen_at=now,
-                                )
+                        continue
+
+                    if not raw_text:
+                        continue
+
+                    normalized = _normalize_for_hash(raw_text)
+                    content_hash = _sha256(normalized)
+                    if content_hash not in seen_hashes:
+                        seen_hashes.add(content_hash)
+                        now = _utcnow()
+                        html_documents.append(
+                            RawDocument(
+                                id=uuid4(),
+                                source_url=url,
+                                source_type="web",
+                                raw_text=raw_text,
+                                title=title,
+                                language=_detect_language(normalized),
+                                content_hash=content_hash,
+                                fetched_at=now,
+                                last_seen_at=now,
                             )
-                            self._emit_progress(
-                                "page_indexed",
-                                url=url,
-                                title=title[:120] if title else None,
-                                current=len(html_documents),
-                                max=self.max_pages,
-                            )
+                        )
+                        self._emit_progress(
+                            "page_indexed",
+                            url=url,
+                            title=title[:120] if title else None,
+                            current=len(html_documents),
+                            max=self.max_pages,
+                        )
 
                     if depth < self.max_depth:
                         for href in self._extract_links(response, url):
@@ -1001,6 +1039,30 @@ class WebConnector(IngestorBase):
             self.allowed_domain, len(html_documents),
             len(pdf_documents), len(xml_documents), len(all_docs),
         )
+
+        # End-of-crawl health guard: if a source produced zero documents
+        # we want SOME signal upstream — silent zeros are how
+        # federalregister.gov stayed "active" in the UI for days while
+        # actually being CAPTCHA-blocked. Most blocking redirects
+        # happen below the visibility of this connector (Crawl4AI's
+        # internal same-domain filter eats the off-domain URL before
+        # it reaches our skip-loop), so we record the block at the
+        # end as a fallback. A real, lawfully empty source (rare —
+        # would mean the seed and every link 404'd) hits this too,
+        # which is acceptable: the operator can still see it as
+        # "blocked / empty" in the dashboard and investigate.
+        if len(all_docs) == 0:
+            seed_url = (
+                self.seed_urls[0]
+                if self.seed_urls else f"https://{self.allowed_domain}/"
+            )
+            logger.warning(
+                "WebConnector returned 0 documents for %s — recording "
+                "as block (likely interstitial / redirect / 4xx)",
+                self.allowed_domain,
+            )
+            _record_block(seed_url, "no_pages_indexed")
+
         self._emit_progress(
             "connector_done",
             html=len(html_documents),

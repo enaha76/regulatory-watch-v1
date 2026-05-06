@@ -94,11 +94,25 @@ def _find_matched_keywords(keywords: list, raw_text: str) -> list[str]:
 
 def _hs_overlap(sub_codes: list, event_codes: set[str]) -> bool:
     """
-    Return True if any subscription HS code overlaps with the event's codes.
+    Return True if the subscription's HS-code filter is compatible with
+    the event's codes.
 
     Uses prefix matching so picking a parent code (e.g. "84") includes any
     child line (e.g. "8471", "847130"). Stripping non-digits first keeps
     formats consistent ("8541.40" matches "854140").
+
+    Three-state semantics:
+      - subscription has no codes set → always pass (no filter).
+      - event has no codes extracted  → pass through. Many real customs
+        events (anti-dumping orders, port closures, sanctions lists) are
+        scoped by case/country, and the LLM correctly refuses to invent
+        codes the document didn't print. Treating absence of codes on the
+        event side as a hard reject costs us legitimate alerts (a CBP
+        slip-opinion reducing the PRC anti-dumping rate from 194.09% to
+        82.12% was missed for this exact reason). The other gates
+        (country, cosine similarity, significance score) still gate the
+        match — HS is one filter among several, not the dominant one.
+      - both sides populated → require an actual prefix overlap.
     """
     if not sub_codes:
         return True  # no filter set → pass
@@ -109,7 +123,9 @@ def _hs_overlap(sub_codes: list, event_codes: set[str]) -> bool:
     norm_event = {_normalize(c) for c in event_codes if c}
     norm_event.discard("")
     if not norm_event:
-        return False  # event has no codes; subscription requires some → no match
+        # Event has no HS info; let the other gates decide. This is a
+        # deliberate trade-off (see docstring above).
+        return True
 
     for sc in sub_codes:
         s = _normalize(str(sc))
@@ -190,10 +206,25 @@ def match_event(event_id: UUID) -> dict:
             return {"status": "matched", "event_id": str(event_id),
                     "alerts_created": 0}
 
+        # Sort candidates by similarity DESC so the best-matching
+        # subscription wins the per-user dedup race below.
+        rows_sorted = sorted(
+            rows,
+            key=lambda r: -float(getattr(r, "similarity", 0) or 0),
+        )
+
         alerts_created = 0
         skipped_hs = 0
         skipped_country = 0
-        for row in rows:
+        skipped_user_dup = 0
+        # Per-user dedup: a single user gets at most one alert per event,
+        # even when several of their subscriptions match. Without this,
+        # users with two AOI profiles see the same event twice in their
+        # inbox. The unique constraint `(subscription_id, change_event_id)`
+        # only catches *exact* duplicates, not same-user duplicates across
+        # different subscriptions.
+        seen_users: set[str] = set()
+        for row in rows_sorted:
             keywords = row.keywords if isinstance(row.keywords, list) else []
             sub_hs = row.hs_codes if isinstance(row.hs_codes, list) else []
             sub_countries = row.countries if isinstance(row.countries, list) else []
@@ -207,6 +238,12 @@ def match_event(event_id: UUID) -> dict:
                 skipped_country += 1
                 continue
 
+            if row.user_email in seen_users:
+                # The user already has an alert for this event from a
+                # better-scoring subscription. Don't pile on.
+                skipped_user_dup += 1
+                continue
+
             matched = _find_matched_keywords(keywords, raw_text)
 
             session.exec(
@@ -218,6 +255,7 @@ def match_event(event_id: UUID) -> dict:
                 },
             )
             alerts_created += 1
+            seen_users.add(row.user_email)
 
         session.commit()
 
@@ -227,6 +265,7 @@ def match_event(event_id: UUID) -> dict:
                  alerts_created=alerts_created,
                  skipped_hs=skipped_hs,
                  skipped_country=skipped_country,
+                 skipped_user_dup=skipped_user_dup,
                  score=event.significance_score)
 
         return {
