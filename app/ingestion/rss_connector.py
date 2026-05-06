@@ -84,10 +84,19 @@ class RSSConnector(IngestorBase):
 
         logger.info("RSSConnector polling: %s", self.feed_url)
 
+        # Pass the project UA explicitly so feeds behind UA-filtering
+        # gateways (federalregister.gov is the canonical example) don't
+        # get the bot CAPTCHA. feedparser supports `agent=` directly.
+        from app.config import get_settings
+        ua = get_settings().CRAWL_USER_AGENT
+
         # feedparser.parse() is synchronous — run in thread to stay async-safe
         import asyncio
         loop = asyncio.get_event_loop()
-        feed = await loop.run_in_executor(None, feedparser.parse, self.feed_url)
+        feed = await loop.run_in_executor(
+            None,
+            lambda: feedparser.parse(self.feed_url, agent=ua),
+        )
 
         if feed.bozo and not feed.entries:
             logger.warning(

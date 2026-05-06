@@ -185,11 +185,13 @@ class PDFConnector(IngestorBase):
     async def _get_pdf_bytes(self) -> bytes:
         """Download PDF from URL or read from local path."""
         if self.source.startswith(("http://", "https://")):
+            from app.config import get_settings
+            ua = get_settings().CRAWL_USER_AGENT
             async with httpx.AsyncClient(
                 timeout=60,
                 follow_redirects=True,
                 verify=httpx_verify(self.source),
-                headers={"User-Agent": "RegulatoryWatch/1.0"},
+                headers={"User-Agent": ua},
             ) as client:
                 resp = await client.get(self.source)
                 resp.raise_for_status()

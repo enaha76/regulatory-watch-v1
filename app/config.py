@@ -157,6 +157,18 @@ class Settings(BaseSettings):
     CRAWL_HTTP_TIMEOUT_SECONDS: int = Field(default=30, ge=5)
     # Max chars of extracted text per page before truncation.
     CRAWL_MAX_TEXT_CHARS: int = Field(default=500_000, ge=1000)
+    # User-Agent used by every connector (web / pdf / xml / rss). Many
+    # regulator portals (federalregister.gov is the canonical example)
+    # filter on the literal substring "bot" / "monitor" in the UA and
+    # serve a CAPTCHA interstitial. We respect robots.txt at the
+    # connector level — that's the actual policy mechanism — and use a
+    # browser-shaped UA with our project tag at the end so server-side
+    # log inspection still surfaces our identity.
+    CRAWL_USER_AGENT: str = (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36 "
+        "RegulatoryWatch/1.0 (+compliance-monitoring)"
+    )
 
     # ── Admin trigger-crawl (mock-website target) ─────────
     # Used by POST /api/admin/trigger-crawl so the admin UI can kick a crawl

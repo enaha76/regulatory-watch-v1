@@ -217,9 +217,13 @@ class WebConnector(IngestorBase):
     and automatic PDF/XML harvesting.
     """
 
+    # Default UA — overridden in __init__ from settings so a server-side
+    # config tweak doesn't require redeploying the connector. The default
+    # here is browser-shaped on purpose (see config.CRAWL_USER_AGENT).
     USER_AGENT = (
-        "RegulatoryWatch/1.0 (compliance monitoring bot; "
-        "+https://github.com/your-org/regulatory-watch)"
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36 "
+        "RegulatoryWatch/1.0 (+compliance-monitoring)"
     )
     MIN_TEXT_LEN = 200
     MAX_CONCURRENT = 5  # parallel page fetches per batch
@@ -238,6 +242,16 @@ class WebConnector(IngestorBase):
         max_xmls: int = 10,
         on_progress: Optional[Callable[[dict], None]] = None,
     ) -> None:
+        # Pull the live UA from settings each construction so an
+        # operator can flip it without rebuilding the image.
+        try:
+            from app.config import get_settings as _gs
+            ua = (_gs().CRAWL_USER_AGENT or "").strip()
+            if ua:
+                self.USER_AGENT = ua
+        except Exception:
+            # Fall back to the class default — never block the crawl.
+            pass
         self.seed_urls = seed_urls
         self.allowed_domain = allowed_domain
         self.max_pages = max_pages

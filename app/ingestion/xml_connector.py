@@ -194,11 +194,13 @@ class XMLConnector(IngestorBase):
 
     async def _get_xml_bytes(self) -> bytes:
         if self.source.startswith(("http://", "https://")):
+            from app.config import get_settings
+            ua = get_settings().CRAWL_USER_AGENT
             async with httpx.AsyncClient(
                 timeout=30,
                 follow_redirects=True,
                 verify=httpx_verify(self.source),
-                headers={"User-Agent": "RegulatoryWatch/1.0"},
+                headers={"User-Agent": ua},
             ) as client:
                 resp = await client.get(self.source)
                 resp.raise_for_status()
