@@ -258,16 +258,34 @@ function RootInner() {
         </SidebarFooter>
       </Sidebar>
       <SidebarInset>
+        {/* Skip-link: invisible until keyboard-focused, then jumps the
+            user past the sidebar nav directly to the page content.
+            WCAG 2.4.1 (Bypass Blocks). */}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-primary focus:px-3 focus:py-1.5 focus:text-primary-foreground"
+        >
+          Skip to main content
+        </a>
         <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-card px-4">
           <SidebarTrigger />
           <div className="flex items-center gap-2 flex-1">
-            <h2>{getHeaderTitle()}</h2>
+            {/* Page <h1>. The visual size matches the previous <h2>
+                (Tailwind / shadcn keep heading defaults equal); the
+                semantic level is what assistive tech relies on. */}
+            <h1 className="text-base font-semibold leading-tight">
+              {getHeaderTitle()}
+            </h1>
           </div>
           <SystemHealthIndicator />
         </header>
-        <div className="flex-1 overflow-auto p-6">
+        <main
+          id="main-content"
+          className="flex-1 overflow-auto p-6"
+          tabIndex={-1}
+        >
           <Outlet />
-        </div>
+        </main>
       </SidebarInset>
     </SidebarProvider>
   );

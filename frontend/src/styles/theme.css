@@ -65,6 +65,11 @@
 }
 
 .dark {
+  /* Tells the browser native widgets (scrollbars, form controls,
+     `<select>` dropdown) to render in their dark variant. Without
+     this the inputs in dark mode keep light-mode chrome — most
+     visible on Windows / Chrome where scrollbars stay grey-on-white. */
+  color-scheme: dark;
   --background: rgba(47, 47, 47, 1);
   --foreground: rgba(255, 255, 255, 1);
   --card: rgba(47, 47, 47, 1);
@@ -229,4 +234,20 @@ html {
 @keyframes regwatch-wave {
   0%, 100% { height: 25%; }
   50% { height: 95%; }
+}
+
+/* Respect `prefers-reduced-motion: reduce` — disable / shorten every
+   non-essential animation across the app. Keeps state changes
+   intelligible (a <Sheet> still slides in, just instantly) without
+   triggering vestibular issues. We zero `animation-iteration-count`
+   too so infinite pulses stop after one frame. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

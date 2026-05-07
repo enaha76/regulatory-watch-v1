@@ -709,6 +709,15 @@ function DiffBody({
   borderClass: string;
 }) {
   const lines = patch.split("\n");
+  // CSS-only virtualization. content-visibility: auto skips layout
+  // and paint for off-screen lines; contain-intrinsic-size reserves
+  // a placeholder height so the scrollbar sizes correctly. With this,
+  // a 5,000-line diff stays smooth — without it, the browser paints
+  // every line eagerly and the page hitches on first render.
+  const lineStyle: React.CSSProperties = {
+    contentVisibility: "auto",
+    containIntrinsicSize: "auto 1.5em",
+  };
   return (
     <div
       className={`rounded-md border ${borderClass} bg-muted/20 overflow-x-auto`}
@@ -727,6 +736,7 @@ function DiffBody({
               <div
                 key={idx}
                 className="text-muted-foreground bg-muted/40 -mx-4 px-4 py-1 my-1"
+                style={lineStyle}
               >
                 {line}
               </div>
@@ -737,6 +747,7 @@ function DiffBody({
               <div
                 key={idx}
                 className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 -mx-4 px-4 whitespace-pre-wrap break-words"
+                style={lineStyle}
               >
                 {line}
               </div>
@@ -747,6 +758,7 @@ function DiffBody({
               <div
                 key={idx}
                 className="bg-destructive/10 text-destructive -mx-4 px-4 whitespace-pre-wrap break-words"
+                style={lineStyle}
               >
                 {line}
               </div>
@@ -756,6 +768,7 @@ function DiffBody({
             <div
               key={idx}
               className="text-muted-foreground whitespace-pre-wrap break-words"
+              style={lineStyle}
             >
               {line || " "}
             </div>
@@ -819,38 +832,69 @@ export function AlertDetail() {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center h-full">
+      <div
+        className="flex flex-col items-center justify-center h-full"
+        aria-live="polite"
+        aria-busy="true"
+      >
         <p className="text-muted-foreground">Loading alert…</p>
       </div>
     );
   }
 
   if (notFound || !alert) {
+    // Page-level h1 with a fix/next-step hint per the guidelines —
+    // "error messages include fix/next step, not just problem".
     return (
-      <div className="flex flex-col items-center justify-center h-full space-y-4">
-        <h2>Alert not found</h2>
-        <Button onClick={() => navigate("/alerts")}>
-          <ArrowLeft className="size-4 mr-2" />
-          Back to Alerts
-        </Button>
+      <div className="flex flex-col items-center justify-center h-full space-y-4 text-center">
+        <h1 className="text-2xl font-semibold">Alert not found</h1>
+        <p className="text-muted-foreground max-w-md">
+          The alert you're looking for may have been archived or
+          removed. Try the inbox or the Regulatory Search page to
+          locate it.
+        </p>
+        <div className="flex gap-3">
+          <Button onClick={() => navigate("/alerts")}>
+            <ArrowLeft className="size-4 mr-2" aria-hidden="true" />
+            Back to Inbox
+          </Button>
+          <Button variant="outline" onClick={() => navigate("/regulatory-search")}>
+            Open Search
+          </Button>
+        </div>
       </div>
     );
   }
 
   const getCountryFlag = (country: string) => {
+    // Flags are decorative — the country name is rendered in text right
+    // next to them, so screen readers don't need to also announce the
+    // image. aria-hidden prevents the duplicate announcement.
     const flagMap: { [key: string]: React.ReactNode } = {
-      India: <IN className="size-8" />,
-      China: <CN className="size-8" />,
-      EU: <EU className="size-8" />,
-      "United States": <US className="size-8" />,
+      India: <IN className="size-8" aria-hidden="true" />,
+      China: <CN className="size-8" aria-hidden="true" />,
+      EU: <EU className="size-8" aria-hidden="true" />,
+      "United States": <US className="size-8" aria-hidden="true" />,
     };
-    return flagMap[country] || "🌐";
+    return (
+      flagMap[country] || (
+        <span aria-hidden="true">🌐</span>
+      )
+    );
   };
 
+  // Three-tier severity. Mirrors alerts-view.tsx exactly — previously
+  // the inbox showed ≥80 in destructive red while this page showed it
+  // in accent amber, so the same alert appeared to "downgrade" when
+  // the user clicked through.
   const getRelevanceColor = (score: number) => {
-    if (score >= 80) return "bg-accent text-accent-foreground";
-    if (score >= 60) return "bg-primary text-primary-foreground";
-    return "bg-muted text-muted-foreground";
+    if (score >= 80) {
+      return "bg-destructive/90 text-destructive-foreground border-transparent";
+    }
+    if (score >= 60) {
+      return "bg-accent text-accent-foreground border-transparent";
+    }
+    return "bg-muted text-muted-foreground border-transparent";
   };
 
   return (
@@ -870,7 +914,14 @@ export function AlertDetail() {
           <div className="flex items-start gap-4 mb-4">
             {getCountryFlag(alert.country)}
             <div className="flex-1">
-              <CardTitle className="text-2xl mb-2">{alert.title}</CardTitle>
+              {/* Direct <h1> — CardTitle is hardcoded to <h4> in
+                  this shadcn template, but the page heading must
+                  be the highest-level heading for screen-reader
+                  navigation. Visual size matches text-2xl from the
+                  CardTitle styling. */}
+              <h1 className="text-2xl font-semibold leading-none mb-2">
+                {alert.title}
+              </h1>
               <CardDescription className="flex flex-wrap gap-4 text-base">
                 <span className="flex items-center gap-2">
                   <FileText className="size-4" />

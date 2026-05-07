@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import {
   Alert as ApiAlert,
   AlertFeedback,
@@ -721,10 +721,16 @@ export function AlertsView() {
   // /            — focus the search input
   // Escape       — clear keyboard selection
   //
-  // Skipped while the user is typing in any input/textarea/contenteditable
-  // element so the search box and dialogs aren't hijacked. This is the
-  // pattern Linear / Superhuman / GitHub all use; a compliance officer
-  // burning through 50 alerts/day will instinctively look for it.
+  // Refs so the listener doesn't re-attach every render. Without
+  // these, [filteredAlerts, keyboardIdx] in the deps array makes the
+  // window keydown handler get added/removed on every keystroke
+  // (the array identity changes each render). At 200 alerts that's
+  // 200 listener swaps per render — measurable on slow machines.
+  const filteredAlertsRef = useRef(filteredAlerts);
+  const keyboardIdxRef = useRef(keyboardIdx);
+  useEffect(() => { filteredAlertsRef.current = filteredAlerts; }, [filteredAlerts]);
+  useEffect(() => { keyboardIdxRef.current = keyboardIdx; }, [keyboardIdx]);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // Don't intercept when the user is typing in a form field.
@@ -743,9 +749,12 @@ export function AlertsView() {
       // Modifiers reserved for browser/OS shortcuts.
       if (e.ctrlKey || e.metaKey || e.altKey) return;
 
-      const list = filteredAlerts;
+      // Read from refs — the closure captured at attach time would
+      // see stale values if we used filteredAlerts/keyboardIdx
+      // directly; the refs always reflect the latest render.
+      const list = filteredAlertsRef.current;
       const len = list.length;
-      const cur = keyboardIdx;
+      const cur = keyboardIdxRef.current;
 
       switch (e.key) {
         case "j":
@@ -813,8 +822,9 @@ export function AlertsView() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredAlerts, keyboardIdx]);
+    // Empty deps — handler reads from refs above, attached once for
+    // the component's lifetime.
+  }, []);
 
   // Clamp the keyboard index when filtered list shrinks (e.g. user
   // archives the selected row, or filter narrows it out of view).
@@ -1123,7 +1133,9 @@ export function AlertsView() {
               <Check className="size-12 text-accent" />
             </div>
           </div>
-          <h2 className="text-2xl">You're all caught up ✓</h2>
+          <h2 className="text-2xl">
+            You're all caught up <span aria-hidden="true">✓</span>
+          </h2>
           <p className="text-muted-foreground max-w-md">
             {includeRead
               ? "No new or read alerts in your inbox. Use the toggle above to hide read ones, or check the archive."
@@ -1141,13 +1153,21 @@ export function AlertsView() {
         <>
       <div className="flex items-center gap-4">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Search
+            className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <label htmlFor="inbox-search" className="sr-only">
+            Search alerts
+          </label>
           <Input
-            type="text"
-            placeholder="Search alerts by title, country, authority, type, or product..."
+            id="inbox-search"
+            type="search"
+            placeholder="Search alerts by title, country, authority, type, or product…"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
+            aria-label="Search alerts"
           />
         </div>
         {searchQuery && (
@@ -1210,7 +1230,20 @@ export function AlertsView() {
                         ? (el) => el?.scrollIntoView({ block: "nearest" })
                         : undefined
                     }
+                    // Click sets keyboard focus only — actual navigation
+                    // is handled by the <Link> on the title so Cmd-click,
+                    // middle-click, and right-click "open in new tab"
+                    // all behave correctly.
                     onClick={() => setKeyboardIdx(idx)}
+                    onKeyDown={(e) => {
+                      // Space toggles selection without navigating;
+                      // Enter is handled by the global keyboard
+                      // shortcut effect, so don't intercept here.
+                      if (e.key === " ") {
+                        e.preventDefault();
+                        setKeyboardIdx(idx);
+                      }
+                    }}
                     className={`group ${rowOpacity} ${unreadCue} ${keyboardCue}`.trim()}
                   >
                     {/* Two-line card: title + meta row. Country flag
@@ -1226,14 +1259,23 @@ export function AlertsView() {
                         <div className="min-w-0 flex-1 space-y-0.5">
                           <div className="flex items-center gap-2 min-w-0">
                             {isUnread && (
-                              <span className="size-1.5 rounded-full bg-primary shrink-0" />
+                              <span
+                                className="size-1.5 rounded-full bg-primary shrink-0"
+                                aria-hidden="true"
+                              />
                             )}
                             {alert.pinned && (
-                              <Pin className="size-3.5 fill-primary text-primary shrink-0" />
+                              <Pin
+                                className="size-3.5 fill-primary text-primary shrink-0"
+                                aria-hidden="true"
+                              />
                             )}
-                            <p
-                              onClick={() => navigate(`/alerts/${alert.id}`)}
-                              className="cursor-pointer hover:text-primary truncate min-w-0"
+                            {/* Real <Link> so Cmd/Ctrl-click and middle-click
+                                open the alert in a new tab — the previous
+                                <p onClick> swallowed those modifiers. */}
+                            <Link
+                              to={`/alerts/${alert.id}`}
+                              className="hover:text-primary truncate min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded-sm"
                               style={{
                                 fontSize: "var(--text-base)",
                                 fontWeight: isReviewed
@@ -1242,9 +1284,10 @@ export function AlertsView() {
                                     ? "var(--font-weight-bold)"
                                     : "var(--font-weight-medium)",
                               }}
+                              aria-label={`Open alert: ${alert.title}${isUnread ? " (unread)" : ""}${alert.pinned ? " (pinned)" : ""}`}
                             >
                               {alert.title}
-                            </p>
+                            </Link>
                           </div>
                           <div
                             className="flex items-center gap-2.5 flex-wrap text-muted-foreground"

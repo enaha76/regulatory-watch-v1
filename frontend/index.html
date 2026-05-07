@@ -3,6 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Match the mobile-browser chrome to the page background so the
+         status bar / address bar / tab bar don't read as a different
+         surface. Two entries: light mode resolves to near-white, dark
+         mode to the same near-black we use in CSS variables. -->
+    <meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#2f2f2f" media="(prefers-color-scheme: dark)" />
     <link rel="icon" type="image/jpeg" href="/src/assets/logo-icon.jpeg" />
 
     <!-- Inter via Google Fonts. Variable font, weights 400/500/600/700.
