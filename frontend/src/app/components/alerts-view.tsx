@@ -1265,6 +1265,73 @@ export function AlertsView() {
                                 </Badge>
                               </>
                             )}
+                            {/* Trade lane — only when BOTH endpoints are
+                                known (not "*->X" or "X->*"). The
+                                wildcard form duplicates the country flag
+                                in the row's left avatar; the directed
+                                form ("CN→US", "US→EU") carries
+                                information the flag alone can't show. */}
+                            {(() => {
+                              const tl = alert.tradeLane || "";
+                              const isWildcard =
+                                !tl ||
+                                tl.startsWith("*") ||
+                                tl.endsWith("*");
+                              if (isWildcard) return null;
+                              const arrowed = tl.replace("->", "→");
+                              return (
+                                <>
+                                  <span className="size-1 rounded-full bg-muted-foreground/40 shrink-0" />
+                                  <span
+                                    className="font-mono tabular-nums"
+                                    style={{ fontSize: "var(--text-xs)" }}
+                                    title={`Trade lane: ${tl}`}
+                                  >
+                                    {arrowed}
+                                  </span>
+                                </>
+                              );
+                            })()}
+                            {/* HS / commodity codes — show first two,
+                                then "+N" if there are more. Mono
+                                rendering so the codes scan vertically
+                                across rows ("8541.40.60" reads as a
+                                code, not as text). */}
+                            {alert.affectedProducts &&
+                              alert.affectedProducts.length > 0 && (
+                                <>
+                                  <span className="size-1 rounded-full bg-muted-foreground/40 shrink-0" />
+                                  <div className="flex items-center gap-1">
+                                    {alert.affectedProducts
+                                      .slice(0, 2)
+                                      .map((code) => (
+                                        <Badge
+                                          key={code}
+                                          variant="outline"
+                                          className="px-1.5 py-0 h-4 font-mono font-normal tabular-nums"
+                                          style={{
+                                            fontSize: "var(--text-xs)",
+                                          }}
+                                        >
+                                          {code}
+                                        </Badge>
+                                      ))}
+                                    {alert.affectedProducts.length > 2 && (
+                                      <span
+                                        className="opacity-70"
+                                        style={{
+                                          fontSize: "var(--text-xs)",
+                                        }}
+                                        title={alert.affectedProducts
+                                          .slice(2)
+                                          .join(", ")}
+                                      >
+                                        +{alert.affectedProducts.length - 2}
+                                      </span>
+                                    )}
+                                  </div>
+                                </>
+                              )}
                           </div>
                         </div>
                       </div>

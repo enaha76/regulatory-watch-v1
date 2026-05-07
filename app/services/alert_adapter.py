@@ -248,6 +248,13 @@ def derive_trade_lane(event: ChangeEvent) -> str:
     dst = (event.destination_countries or [None])[0]
     org = (event.origin_countries or [None])[0]
 
+    # When BOTH endpoints are known, prefer the directional form
+    # regardless of trade_flow_direction. The previous code returned
+    # "*->US" for an inbound Venezuela sanctions event even though
+    # origin_countries=['VE'] was on the row — so the inbox lost the
+    # CN->US / VE->US / CD->US directionality the LLM had extracted.
+    if org and dst and org.upper() != dst.upper():
+        return f"{org.upper()}->{dst.upper()}"
     if direction == "inbound" and dst:
         return f"*->{dst.upper()}"
     if direction == "outbound" and org:
