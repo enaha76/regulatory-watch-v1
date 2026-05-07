@@ -126,6 +126,15 @@ celery.conf.beat_schedule = {
         "task": "app.celery_app.recover_stuck_events",
         "schedule": 3600.0,
     },
+    # Some web crawls die mid-run (worker OOM, container restart, a
+    # Crawl4AI hang past its own timeout). The fetch_run row stays in
+    # status='running' forever and shows up in operator dashboards
+    # as "still crawling" even though nothing is. Sweep these every
+    # hour: anything `running` for >1h was abandoned.
+    "cleanup-zombie-fetch-runs-hourly": {
+        "task": "app.celery_app.cleanup_zombie_fetch_runs",
+        "schedule": 3600.0,
+    },
 }
 
 
@@ -160,6 +169,44 @@ def heartbeat():
 
 
 # ── User-managed source scheduler ─────────────────────────────────────────────
+@celery.task(name="app.celery_app.cleanup_zombie_fetch_runs")
+def cleanup_zombie_fetch_runs():
+    """Mark fetch_run rows as failed when they've been ``running`` for
+    more than an hour with no completion. These are crawls whose
+    worker died mid-run — the task is gone but the row never got the
+    closing UPDATE. Without this, the Sources page shows them as
+    "still crawling" indefinitely and last-activity counters drift.
+
+    Idempotent. Bounded — touches at most 50 rows per run so a
+    pathological backlog can't deadlock the beat queue.
+    """
+    from datetime import datetime, timedelta, timezone
+    from sqlmodel import Session, select
+    from app.database import engine
+    from app.models import FetchRun
+
+    log = logger.bind(task="cleanup_zombie_fetch_runs")
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+    closed = 0
+    with Session(engine) as session:
+        zombies = list(session.exec(
+            select(FetchRun)
+            .where(FetchRun.status == "running")
+            .where(FetchRun.started_at < cutoff)
+            .order_by(FetchRun.started_at.asc())
+            .limit(50)
+        ).all())
+        for run in zombies:
+            run.status = "failed"
+            run.finished_at = datetime.now(timezone.utc)
+            session.add(run)
+            closed += 1
+        if closed:
+            session.commit()
+    log.info("cleanup_zombie_fetch_runs_done", closed=closed)
+    return {"closed": closed}
+
+
 @celery.task(name="app.celery_app.recover_stuck_events")
 def recover_stuck_events():
     """Re-run scoring for events that fell off the pipeline.
