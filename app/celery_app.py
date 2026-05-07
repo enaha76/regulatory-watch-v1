@@ -114,6 +114,18 @@ celery.conf.beat_schedule = {
         "task": "app.celery_app.crawl_due_domains",
         "schedule": 300.0,
     },
+    # Recover events that fell off the pipeline. Two failure modes:
+    #   - modified events with no scored_at (the dispatch was lost or
+    #     the worker died mid-run)
+    #   - events with a transient http_error from a previous score
+    #     attempt (timeouts, rate limits, connection resets)
+    # Hourly retry catches both cleanly without flooding the LLM
+    # endpoint. Idempotent — score_event is a no-op for events that
+    # already have a score.
+    "recover-stuck-events-hourly": {
+        "task": "app.celery_app.recover_stuck_events",
+        "schedule": 3600.0,
+    },
 }
 
 
@@ -148,6 +160,69 @@ def heartbeat():
 
 
 # ── User-managed source scheduler ─────────────────────────────────────────────
+@celery.task(name="app.celery_app.recover_stuck_events")
+def recover_stuck_events():
+    """Re-run scoring for events that fell off the pipeline.
+
+    Two recoverable states:
+      1. ``diff_kind = modified`` AND ``scored_at IS NULL`` AND
+         ``llm_error IS NULL``: the dispatch was lost or the worker
+         died mid-run. Older than 30 minutes so we don't race fresh
+         events still being processed.
+      2. ``llm_error LIKE 'http_error%'``: the LLM call failed on a
+         transient network condition (timeout, connection reset,
+         rate limit). The retry policy in ``embeddings.embed`` catches
+         most of these now, but events scored before that fix landed
+         still carry the error flag.
+
+    Idempotent: ``score_event`` no-ops on events with an existing
+    score, and our ``score_change_event`` task already accepts a
+    ``retry_errors`` flag for the second class.
+
+    Scope is bounded — at most 50 events per hour — so a broader
+    OpenAI outage doesn't translate into a thundering herd.
+    """
+    from datetime import datetime, timedelta, timezone
+    from sqlmodel import Session, select
+    from app.database import engine
+    from app.models import ChangeEvent
+
+    log = logger.bind(task="recover_stuck_events")
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=30)
+
+    enqueued = 0
+    with Session(engine) as session:
+        stuck_unscored = list(session.exec(
+            select(ChangeEvent.id)
+            .where(ChangeEvent.diff_kind == "modified")
+            .where(ChangeEvent.scored_at.is_(None))  # type: ignore[union-attr]
+            .where(ChangeEvent.llm_error.is_(None))  # type: ignore[union-attr]
+            .where(ChangeEvent.detected_at < cutoff)
+            .limit(25)
+        ).all())
+        for event_id in stuck_unscored:
+            score_change_event.delay(str(event_id))
+            enqueued += 1
+
+        errored = list(session.exec(
+            select(ChangeEvent.id)
+            .where(ChangeEvent.llm_error.like("http_error%"))  # type: ignore[union-attr]
+            .where(ChangeEvent.scored_at.is_not(None))  # type: ignore[union-attr]
+            .limit(25)
+        ).all())
+        for event_id in errored:
+            score_change_event.delay(str(event_id), retry_errors=True)
+            enqueued += 1
+
+    log.info(
+        "recover_stuck_events_done",
+        enqueued=enqueued,
+        unscored=len(stuck_unscored),
+        errored=len(errored),
+    )
+    return {"enqueued": enqueued, "unscored": len(stuck_unscored), "errored": len(errored)}
+
+
 @celery.task(name="app.celery_app.crawl_due_domains")
 def crawl_due_domains():
     """

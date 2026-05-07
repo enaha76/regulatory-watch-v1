@@ -16,7 +16,7 @@ upsert it on PUT. Multiple subscriptions per user remain supported through
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -186,4 +186,55 @@ def upsert_areas(
         keyword_count=len(keywords),
         embedding_ready=sub.embedding is not None,
     )
+
+    # ── Retroactive matching ─────────────────────────────────────────
+    # Without this, an AOI change has no effect on past events — they
+    # were already matched (or skipped) against the old subscription
+    # and never get re-evaluated. Queue a one-time scan of recent
+    # scored events so the user immediately sees alerts for content
+    # that fits their refined interests.
+    #
+    # Bounded: 30 days back, embedding present, score >= the old
+    # min_significance gate. Cheap (re-runs the same matching SQL on
+    # a small candidate set) and idempotent (uq_alerts_subscription_event
+    # blocks duplicates).
+    if sub.embedding is not None:
+        try:
+            from app.celery_app import match_change_event
+            from app.models import ChangeEvent
+            recent = session.exec(
+                select(ChangeEvent.id)
+                .where(ChangeEvent.embedding.is_not(None))  # type: ignore[union-attr]
+                .where(ChangeEvent.significance_score.is_not(None))  # type: ignore[union-attr]
+                .where(ChangeEvent.significance_score >= sub.min_significance)  # type: ignore[union-attr]
+                .where(ChangeEvent.detected_at > now - timedelta(days=30))
+            ).all()
+            queued = 0
+            for event_id in recent:
+                try:
+                    match_change_event.delay(str(event_id))
+                    queued += 1
+                except Exception as enq_exc:  # noqa: BLE001
+                    log.warning(
+                        "areas_retro_enqueue_failed",
+                        sub_id=str(sub.id),
+                        event_id=str(event_id),
+                        error=str(enq_exc),
+                    )
+            log.info(
+                "areas_retro_match_queued",
+                sub_id=str(sub.id),
+                events_queued=queued,
+            )
+        except Exception as exc:  # noqa: BLE001
+            # Never fail the AOI save just because retro matching
+            # broke. The user's preferences are persisted; matching
+            # is a best-effort enrichment.
+            log.warning(
+                "areas_retro_match_failed",
+                sub_id=str(sub.id),
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+
     return _to_profile(sub)

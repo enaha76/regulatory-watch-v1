@@ -597,9 +597,30 @@ def score_event(event_id: UUID, *, retry_errors: bool = False) -> dict:
         # the lossy round-trip (source_lang → EN → source_lang).
         # See docs/architectural_problems.md §2 for rationale.
         event.summary = parsed.compliance_summary
-        # Strip whitespace and clip to the column limit. Empty headlines
-        # become NULL so derive_title falls through to legacy behaviour.
+        # Strip whitespace and clip to the column limit. The LLM
+        # occasionally returns an empty headline on long structurally
+        # complex documents (a few EU multi-regulation notices and one
+        # CBP omnibus court order). Rather than write NULL — which
+        # leaves the inbox row falling all the way through derive_title
+        # to the topic-fallback ("Customs Trade update detected") and
+        # looks broken — synthesise a headline from the summary's
+        # first sentence in that fallback case. We log it so the
+        # frequency stays visible.
         hl = (parsed.headline or "").strip()
+        if not hl:
+            first_sentence = (parsed.compliance_summary or "").split(".")[0].strip()
+            if first_sentence:
+                # Trim to ~110 chars at a word boundary so the chip
+                # rendering doesn't truncate ugly mid-word.
+                if len(first_sentence) > 110:
+                    cut = first_sentence[:110].rsplit(" ", 1)[0]
+                    first_sentence = cut + "…"
+                hl = first_sentence
+                log.warning(
+                    "empty_headline_synthesised_from_summary",
+                    event_id=str(event_id),
+                    fallback=hl[:80],
+                )
         event.headline = hl[:160] if hl else None
         # Fix 1 — Hardcoded Trade Flow: use assign_trade_countries()
         # which respects trade_flow_direction instead of blindly mapping
