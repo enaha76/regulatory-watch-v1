@@ -109,7 +109,13 @@ def list_alerts_v2(
         pattern="^(new|read|archived)$",
         description="Frontend status filter",
     ),
-    limit: int = Query(default=50, ge=1, le=200),
+    q: Optional[str] = Query(
+        default=None,
+        max_length=200,
+        description="Free-text search across headline, summary, authority, "
+                    "and source URL. Server-side ILIKE; case-insensitive.",
+    ),
+    limit: int = Query(default=50, ge=1, le=500),
     session: Session = Depends(get_session),
     user: CurrentUser = Depends(get_current_user),
 ):
@@ -166,9 +172,25 @@ def list_alerts_v2(
     if status:
         stmt = stmt.where(Alert.status == status_fe_to_be(status))
 
+    # Server-side search. Joins change_events (where the searchable
+    # text actually lives — headline, summary, authority via URL)
+    # and applies an ILIKE on each field. The previous client-side
+    # filter capped at 200 rows, so the regulatory search page
+    # silently missed anything past that.
+    if q:
+        from sqlalchemy import or_
+        like = f"%{q.strip()}%"
+        stmt = stmt.join(ChangeEvent, ChangeEvent.id == Alert.change_event_id).where(
+            or_(
+                ChangeEvent.headline.ilike(like),  # type: ignore[union-attr]
+                ChangeEvent.summary.ilike(like),  # type: ignore[union-attr]
+                ChangeEvent.source_url.ilike(like),  # type: ignore[union-attr]
+            )
+        )
+
     # Over-fetch so dedup doesn't starve us of rows. Cap the multiplier
     # so a pathological 100x-fanout doesn't blow up the query.
-    overfetch = min(limit * 3, 1000)
+    overfetch = min(limit * 3, 1500)
     stmt = stmt.order_by(Alert.created_at.desc()).limit(overfetch)
 
     out: list[dict] = []

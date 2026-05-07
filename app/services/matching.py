@@ -117,8 +117,15 @@ def _hs_overlap(sub_codes: list, event_codes: set[str]) -> bool:
     if not sub_codes:
         return True  # no filter set → pass
 
+    # Strip to digits only. The entity index stores canonical keys
+    # like "hts 8507.60.00" / "hs 854140" / "schedule b 0405.20" —
+    # keeping the prefix in the comparison meant a subscription on
+    # "8507" never matched an event tagged "hts 8507.60.00" because
+    # "hts85076000".startswith("8507") is false. Compliance officers
+    # write subscriptions in pure-digit form ("854140"); we have to
+    # meet them there.
     def _normalize(code: str) -> str:
-        return "".join(c for c in (code or "") if c.isalnum())
+        return "".join(c for c in (code or "") if c.isdigit())
 
     norm_event = {_normalize(c) for c in event_codes if c}
     norm_event.discard("")

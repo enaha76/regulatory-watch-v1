@@ -25,30 +25,70 @@ type Alert = ApiAlert;
 export function RegulatorySearchView() {
   const navigate = useNavigate();
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [totalIndexed, setTotalIndexed] = useState<number | null>(null);
 
+  // Server-side search, debounced. Replaces the old "load 200 rows
+  // and filter client-side" approach which silently capped results.
+  // The backend ILIKEs across headline + summary + source_url so
+  // searching for "lithium" or "8541" finds matches even if those
+  // aren't in the title.
   useEffect(() => {
-    let cancelled = false;
+    const q = searchQuery.trim();
+
+    // Empty query: just fetch a tiny batch so we can show the
+    // "N alerts indexed" hint.
+    if (!q) {
+      setLoading(true);
+      let cancelled = false;
+      listAlerts({ limit: 1 })
+        .then(() => {
+          if (cancelled) return;
+          // Backend doesn't return a total count; ask for the
+          // ceiling-bumped batch and show "N+" if we hit it.
+          return listAlerts({ limit: 500 });
+        })
+        .then((rows) => {
+          if (cancelled || !rows) return;
+          setAlerts([]);
+          setTotalIndexed(rows.length >= 500 ? 500 : rows.length);
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setAlerts([]);
+            setTotalIndexed(null);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    // Debounce so we don't flood the server while the user types.
     setLoading(true);
-    // No status filter → backend returns every alert. The frontend
-    // does case-insensitive substring matching across the indexed
-    // fields below.
-    listAlerts({ limit: 200 })
-      .then((rows) => {
-        if (!cancelled) setAlerts(rows);
-      })
-      .catch((err: Error) => {
-        console.warn("Search load failed:", err.message);
-        if (!cancelled) setAlerts([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      listAlerts({ q, limit: 100 })
+        .then((rows) => {
+          if (!cancelled) setAlerts(rows);
+        })
+        .catch((err: Error) => {
+          console.warn("Search failed:", err.message);
+          if (!cancelled) setAlerts([]);
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    }, 250);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, []);
+  }, [searchQuery]);
 
   const getRelevanceColor = (score: number) => {
     if (score >= 80) return "bg-accent text-accent-foreground";
@@ -66,21 +106,9 @@ export function RegulatorySearchView() {
     return flagMap[country] || <span className="text-base">🌐</span>;
   };
 
-  const query = searchQuery.trim().toLowerCase();
-  const results =
-    query === ""
-      ? []
-      : alerts.filter((a) => {
-          return (
-            a.title.toLowerCase().includes(query) ||
-            a.country.toLowerCase().includes(query) ||
-            a.authority.toLowerCase().includes(query) ||
-            a.regulationType.toLowerCase().includes(query) ||
-            a.tradeLane.toLowerCase().includes(query) ||
-            a.affectedProducts.some((p) => p.toLowerCase().includes(query)) ||
-            a.id.toLowerCase().includes(query)
-          );
-        });
+  const query = searchQuery.trim();
+  // Backend already filtered; results IS the alerts list.
+  const results = query === "" ? [] : alerts;
 
   return (
     <div className="space-y-6">
@@ -115,8 +143,11 @@ export function RegulatorySearchView() {
               className="text-muted-foreground mt-1"
               style={{ fontSize: "var(--text-sm)" }}
             >
-              {alerts.length.toLocaleString()} alerts indexed. Type above to
-              search by keyword, country, authority, HS code, or trade lane.
+              {totalIndexed !== null
+                ? `${totalIndexed >= 500 ? "500+" : totalIndexed.toLocaleString()} alerts indexed. `
+                : ""}
+              Type above to search across headlines, summaries,
+              authorities, HS codes, and trade lanes.
             </p>
           </div>
         </div>

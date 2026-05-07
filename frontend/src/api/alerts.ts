@@ -90,6 +90,10 @@ export interface AlertDiff {
 export interface ListAlertsParams {
   email?: string;
   status?: AlertStatus;
+  /** Free-text search across headline / summary / source URL.
+   * Server-side ILIKE — case-insensitive substring. Replaces the
+   * old 200-row client-filter approach. */
+  q?: string;
   limit?: number;
 }
 
@@ -114,6 +118,7 @@ export async function listAlerts(
   const qs = new URLSearchParams();
   if (params.email) qs.set("email", params.email);
   if (params.status) qs.set("status", params.status);
+  if (params.q) qs.set("q", params.q);
   if (params.limit !== undefined) qs.set("limit", String(params.limit));
   const url = `/api/v2/alerts${qs.toString() ? `?${qs}` : ""}`;
   const res = await authFetch(url);
