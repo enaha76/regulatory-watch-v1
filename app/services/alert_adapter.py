@@ -85,9 +85,18 @@ _TOPIC_DISPLAY = {
 
 
 def topic_to_regulation_type(topic: Optional[str]) -> str:
-    """Map a backend topic to the frontend's `regulationType` string."""
-    if not topic:
-        return "Other"
+    """Map a backend topic to the frontend's `regulationType` string.
+
+    Returns "" (empty string) for the LLM's "other" sentinel and for
+    null topics so the frontend can suppress the chip entirely. The
+    chip is a label, not the truth — when the LLM honestly couldn't
+    classify a doc (immigration enforcement, agency form fees, etc.),
+    showing "Other" reads as missing data rather than honest signal.
+    The classification stays in the DB; the UI just doesn't surface
+    it as a chip.
+    """
+    if not topic or topic == "other":
+        return ""
     return _TOPIC_DISPLAY.get(topic, topic.replace("_", " ").title())
 
 

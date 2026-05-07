@@ -326,6 +326,36 @@ export function AlertsView() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+
+  // "X new since last visit" — Linear / Stripe pattern. Read the
+  // previous-visit timestamp from localStorage on mount, then bump
+  // the stored value so the badge clears as soon as the user has
+  // seen the inbox. The badge survives the bump within this render
+  // because we capture lastVisit into state once.
+  const [lastVisitMs] = useState<number>(() => {
+    try {
+      const v = localStorage.getItem("regwatch.inbox.lastVisitAt");
+      const parsed = v ? Number(v) : 0;
+      return Number.isFinite(parsed) ? parsed : 0;
+    } catch {
+      return 0;
+    }
+  });
+  useEffect(() => {
+    // Bump only after the user has actually seen at least one alert
+    // (loading finished + non-zero list). Otherwise a flash visit
+    // during a slow connection would silently clear the "new" count.
+    if (!loading && alerts.length > 0) {
+      try {
+        localStorage.setItem(
+          "regwatch.inbox.lastVisitAt",
+          String(Date.now()),
+        );
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [loading, alerts.length]);
   // When true, the inbox includes status="read" alerts in addition to
   // status="new". Lets the user revisit alerts they've already seen
   // without going to the Archive page (those are explicitly dismissed).
@@ -810,14 +840,41 @@ export function AlertsView() {
   // hid the toggle entirely, which was confusing.
   const isEmpty = alerts.length === 0 && searchQuery === "";
 
+  // Count alerts that landed after the user's previous visit.
+  // Threshold of 0 (first-ever visit) counts everything as "new" — so
+  // we suppress the badge entirely in that case to avoid the
+  // confusing "12 new since last visit" on a brand-new account.
+  const newSinceLastVisit =
+    lastVisitMs > 0
+      ? alerts.filter((a) => {
+          const t = Date.parse(a.publicationDate);
+          return Number.isFinite(t) && t > lastVisitMs;
+        }).length
+      : 0;
+
   return (
     <div className="space-y-6">
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <div>
+          <div className="flex items-center gap-3">
             <p className="text-muted-foreground">
               Review pending alerts on global trade regulatory changes
             </p>
+            {newSinceLastVisit > 0 && (
+              <span
+                className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 text-primary px-2.5 py-0.5 border border-primary/20"
+                style={{
+                  fontSize: "var(--text-xs)",
+                  fontWeight: "var(--font-weight-medium)",
+                }}
+                title={`${newSinceLastVisit} alert${
+                  newSinceLastVisit === 1 ? "" : "s"
+                } arrived since you last opened the inbox.`}
+              >
+                <span className="size-1.5 rounded-full bg-primary animate-pulse" />
+                {newSinceLastVisit} new since last visit
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -1196,14 +1253,18 @@ export function AlertsView() {
                             <span className="truncate max-w-[300px]">
                               {alert.authority}
                             </span>
-                            <span className="size-1 rounded-full bg-muted-foreground/40 shrink-0" />
-                            <Badge
-                              variant="outline"
-                              className="px-1.5 py-0 h-4 font-normal"
-                              style={{ fontSize: "var(--text-xs)" }}
-                            >
-                              {alert.regulationType}
-                            </Badge>
+                            {alert.regulationType && (
+                              <>
+                                <span className="size-1 rounded-full bg-muted-foreground/40 shrink-0" />
+                                <Badge
+                                  variant="outline"
+                                  className="px-1.5 py-0 h-4 font-normal"
+                                  style={{ fontSize: "var(--text-xs)" }}
+                                >
+                                  {alert.regulationType}
+                                </Badge>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>

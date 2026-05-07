@@ -17,12 +17,36 @@ from uuid import UUID
 
 import csv
 import io
+import re
 from datetime import datetime, timezone
+from typing import Optional as _Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
+
+
+# Federal Register document numbers look like "2026-09007". The same
+# notice publishes under multiple URL shapes (mods.xml, full_text/xml,
+# documents/.../slug) so we use this number as a cross-source primary
+# key to dedupe the inbox. Pattern is intentionally permissive about
+# the surrounding boundary so the regex catches the id whether it sits
+# at a path segment or before a file extension.
+_FR_DOCNUM_RE = re.compile(r"/(\d{4}-\d{4,7})(?:[./]|$)")
+
+
+def _fr_doc_number(url: _Optional[str]) -> _Optional[str]:
+    """Extract the canonical Federal Register document number from any
+    `federalregister.gov` or `govinfo.gov` URL — the API's primary key
+    for the underlying notice. Returns None for URLs that don't look
+    like FR documents (CBP slip-opinions, mock-website, DGFT, etc.)."""
+    if not url:
+        return None
+    m = _FR_DOCNUM_RE.search(url)
+    if not m:
+        return None
+    return m.group(1)
 
 from app.database import get_session
 from app.models import Alert, ChangeEvent, Obligation, UserSubscription
@@ -149,6 +173,13 @@ def list_alerts_v2(
 
     out: list[dict] = []
     seen_event_ids: set = set()
+    # Cross-source dedup. A single FR notice publishes under multiple
+    # URL shapes (mods.xml, full_text/xml, documents/...), each producing
+    # its own ChangeEvent. Without this, the inbox shows the same
+    # regulation 2-3 times. We collapse on FR document number so the
+    # user sees the notice once. First match wins (event rows arrive
+    # newest-first, so the freshest crawl's row is what surfaces).
+    seen_fr_doc_numbers: set[str] = set()
     for alert in session.exec(stmt).all():
         if alert.change_event_id in seen_event_ids:
             continue
@@ -158,6 +189,11 @@ def list_alerts_v2(
         if event is None:
             # Orphaned row — skip silently rather than crash the whole list
             continue
+        fr_doc = _fr_doc_number(event.source_url)
+        if fr_doc is not None:
+            if fr_doc in seen_fr_doc_numbers:
+                continue
+            seen_fr_doc_numbers.add(fr_doc)
         out.append(build_frontend_alert(session, alert, event))
         if len(out) >= limit:
             break

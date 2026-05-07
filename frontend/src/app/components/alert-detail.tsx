@@ -893,7 +893,9 @@ export function AlertDetail() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Badge variant="outline">{alert.regulationType}</Badge>
+            {alert.regulationType && (
+              <Badge variant="outline">{alert.regulationType}</Badge>
+            )}
             {alert.affectedProducts.map((product, idx) => (
               <Badge
                 key={idx}
