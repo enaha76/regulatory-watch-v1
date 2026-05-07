@@ -134,11 +134,21 @@ class EmailConnector(IngestorBase):
         self.use_ssl = use_ssl
         self.max_emails = max_emails
 
+    # IMAP socket timeout. Without this, a stalled mail server will
+    # hang the worker indefinitely (default = system-wide socket
+    # timeout, often "no timeout"). 30s is generous — an IMAP TLS
+    # handshake + LOGIN on a healthy server completes in <2s.
+    IMAP_TIMEOUT = 30
+
     def _connect(self) -> imaplib.IMAP4:
         if self.use_ssl:
-            conn = imaplib.IMAP4_SSL(self.host, self.port)
+            conn = imaplib.IMAP4_SSL(
+                self.host, self.port, timeout=self.IMAP_TIMEOUT,
+            )
         else:
-            conn = imaplib.IMAP4(self.host, self.port)
+            conn = imaplib.IMAP4(
+                self.host, self.port, timeout=self.IMAP_TIMEOUT,
+            )
             conn.starttls()
         conn.login(self.user, self.password)
         return conn
@@ -175,7 +185,10 @@ class EmailConnector(IngestorBase):
             status, data = conn.search(None, "UNSEEN")
             if status != "OK":
                 logger.warning("IMAP SEARCH failed: %s", status)
-                return []
+                # Fall through — the `finally` block below logs out.
+                # Returning here would skip cleanup and leak the
+                # connection until the executor thread is recycled.
+                return documents
 
             msg_ids = data[0].split()
             logger.info(
@@ -184,7 +197,20 @@ class EmailConnector(IngestorBase):
 
             for msg_id in msg_ids[: self.max_emails]:
                 try:
-                    status, msg_data = conn.fetch(msg_id, "(RFC822)")
+                    # BODY.PEEK[] reads the message WITHOUT setting the
+                    # \Seen flag. The plain "(RFC822)" form silently
+                    # marks read on fetch — if the worker died between
+                    # this fetch() and the downstream persist, the
+                    # email would now be flagged read on the IMAP
+                    # server but missing from our DB → permanent
+                    # silent loss. With PEEK, the worst case on a
+                    # crash is that we re-fetch the same email next
+                    # run (cheap; upsert_documents dedupes by
+                    # content_hash). We never mark read in this
+                    # connector — the operator can purge the mailbox
+                    # out-of-band, or a future iteration can mark
+                    # read AFTER downstream persistence confirms.
+                    status, msg_data = conn.fetch(msg_id, "(BODY.PEEK[])")
                     if status != "OK" or not msg_data:
                         continue
 

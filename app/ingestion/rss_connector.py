@@ -90,13 +90,34 @@ class RSSConnector(IngestorBase):
         from app.config import get_settings
         ua = get_settings().CRAWL_USER_AGENT
 
-        # feedparser.parse() is synchronous — run in thread to stay async-safe
+        # feedparser.parse() is synchronous and (worse) has no timeout
+        # of its own — a feed server that accepts the connection but
+        # never replies will hang the worker indefinitely. Cap the
+        # whole parse step at 60s; a healthy feed responds in <2s.
         import asyncio
+        FEED_TIMEOUT = 60.0
         loop = asyncio.get_event_loop()
-        feed = await loop.run_in_executor(
-            None,
-            lambda: feedparser.parse(self.feed_url, agent=ua),
-        )
+        try:
+            feed = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    lambda: feedparser.parse(self.feed_url, agent=ua),
+                ),
+                timeout=FEED_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "RSSConnector: timeout (%ss) parsing %s",
+                FEED_TIMEOUT, self.feed_url,
+            )
+            return []
+        except Exception as exc:  # noqa: BLE001 — connector boundary
+            # feedparser raises on socket errors before bozo can be set
+            logger.warning(
+                "RSSConnector: fetch failed for %s: %s",
+                self.feed_url, exc,
+            )
+            return []
 
         if feed.bozo and not feed.entries:
             logger.warning(

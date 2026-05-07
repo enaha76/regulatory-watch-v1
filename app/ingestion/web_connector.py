@@ -782,10 +782,35 @@ class WebConnector(IngestorBase):
                     exclude_external_images=True,
                 )
 
-                results = await self._crawler.arun(
-                    url=self.seed_urls[0],
-                    config=run_cfg,
+                # Outer timeout for the whole BestFirst run. Crawl4AI
+                # has a per-page page_timeout above, but its deep-crawl
+                # strategy can still hang at the strategy level (the
+                # scoring queue stuck on a chain of slow redirects, a
+                # browser context that never goes idle, or a domain
+                # that returns 200s but pages never reach
+                # networkidle). At max_pages=50 with a 30s per-page
+                # budget the upper bound is ~25 minutes; cap at 12 to
+                # bound real wall time. Beyond this the crawl is
+                # almost certainly looping.
+                BESTFIRST_TIMEOUT = max(
+                    300,
+                    min(720, self.max_pages * 15),
                 )
+                try:
+                    results = await asyncio.wait_for(
+                        self._crawler.arun(
+                            url=self.seed_urls[0],
+                            config=run_cfg,
+                        ),
+                        timeout=BESTFIRST_TIMEOUT,
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "BestFirst timeout (%ss) for %s — "
+                        "falling through to httpx BFS",
+                        BESTFIRST_TIMEOUT, self.allowed_domain,
+                    )
+                    results = []
                 crawl4ai_results = results if isinstance(results, list) else [results]
                 logger.info(
                     "BestFirst crawl done: domain=%s pages=%d",
